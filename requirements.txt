@@ -1,0 +1,11 @@
+flask
+flask-caching
+flask-sqlalchemy
+pymysql
+python-dotenv
+slack-sdk
+openai
+anthropic
+google-cloud-language
+slack_bolt
+slack_sdk
