@@ -17,7 +17,9 @@ async def process_message(app, event, say, bot_name):
         thread_ts = thread_ts or event.get("item", {}).get("ts")
     bot_user_id = get_bot_user_id(client)
 
-    thread_messages = fetch_thread_messages(client, channel_id, thread_ts, bot_token)
+    thread_messages = fetch_thread_messages(
+        client, channel_id, thread_ts, bot_token, bot_user_id
+    )
 
     # # Get or create the conversation
     # conversation = await get_or_create_conversation(channel_id, thread_ts, user_id)
@@ -28,7 +30,7 @@ async def process_message(app, event, say, bot_name):
     # await process_response(response, channel_id, thread_ts, say, is_stream=True)
 
 
-async def fetch_thread_messages(client, channel_id, thread_ts, bot_token):
+async def fetch_thread_messages(client, channel_id, thread_ts, bot_token, bot_user_id):
     all_thread_data = []
     try:
         cursor = None
@@ -49,7 +51,7 @@ async def fetch_thread_messages(client, channel_id, thread_ts, bot_token):
             else:
                 raise Exception(f"Failed to fetch thread messages: {response['error']}")
         conversation = slack_conversation(
-            all_thread_data, bot_token, channel_id, thread_ts
+            all_thread_data, bot_token, channel_id, thread_ts, bot_user_id
         )
         return conversation
     except Exception as e:
