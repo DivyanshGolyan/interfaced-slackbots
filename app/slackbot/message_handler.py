@@ -1,12 +1,11 @@
-from slack_sdk.web.async_client import AsyncWebClient
-import os
 from app.database.dao import create_conversation, get_conversation, create_message
 from app.config import SLACK_BOTS
 from app.objects import slack_conversation
+from app import agent_manager
 
 
 async def process_message(app, event, say, bot_name):
-    client = app.client
+    slack_client = app.client
     bot_token = SLACK_BOTS.get(bot_name, {}).get("bot_token", "")
     agent = SLACK_BOTS.get(bot_name, {}).get("agent", "")
     user_id = event.get("user")
@@ -15,11 +14,17 @@ async def process_message(app, event, say, bot_name):
     event_type = event.get("type")
     if event_type == "app_mention":
         thread_ts = thread_ts or event.get("item", {}).get("ts")
-    bot_user_id = get_bot_user_id(client)
+    bot_user_id = await get_bot_user_id(slack_client)
 
-    thread_messages = fetch_thread_messages(
-        client, channel_id, thread_ts, bot_token, bot_user_id
+    thread_messages = await fetch_thread_messages(
+        slack_client, channel_id, thread_ts, bot_token, bot_user_id
     )
+
+    agent = agent_manager.get_agent(bot_name)
+
+    agent_response = agent.process_conversation(thread_messages)
+
+    await send_response(slack_client, agent_response, channel_id, thread_ts, say)
 
     # # Get or create the conversation
     # conversation = await get_or_create_conversation(channel_id, thread_ts, user_id)
@@ -94,27 +99,27 @@ async def get_bot_user_id(client):
 #         await create_message(conversation_id, "bot", response["text"])
 
 
-# async def send_response(response, channel_id, thread_ts, say):
-#     client = AsyncWebClient(token=os.environ["SLACK_API_TOKEN"])
-
-#     if "files" in response:
-#         file_uploads = []
-#         for file_info in response["files"]:
-#             with open(file_info["path"], "rb") as file_content:
-#                 file_uploads.append(
-#                     {"file": file_content.read(), "title": file_info["title"]}
-#                 )
-#         initial_comment = response.get("text", None)
-#         await client.files_upload_v2(
-#             file_uploads=file_uploads,
-#             channel=channel_id,
-#             initial_comment=initial_comment,
-#             thread_ts=thread_ts,
-#         )
-#     elif "text" in response:
-#         await client.chat_postMessage(
-#             channel=channel_id, text=response["text"], thread_ts=thread_ts
-#         )
+async def send_response(client, agent_response, channel_id, thread_ts, say):
+    if agent_response.files:
+        file_uploads = []
+        for file in agent_response.files:
+            file_uploads.append(
+                {
+                    "content": file.file_bytes,
+                    "title": (file.title if file.title else None),
+                }
+            )
+        initial_comment = agent_response.text if agent_response.text else None
+        await client.files_upload_v2(
+            file_uploads=file_uploads,
+            channel=channel_id,
+            initial_comment=initial_comment,
+            thread_ts=thread_ts,
+        )
+    elif agent_response.text:
+        await client.chat_postMessage(
+            channel=channel_id, text=agent_response.text, thread_ts=thread_ts
+        )
 
 
 # async def process_response(response, channel_id, thread_ts, say, is_stream=False):

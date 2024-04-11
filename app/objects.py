@@ -1,7 +1,6 @@
 import aiohttp
 import io
 from app.config import MAX_SLACK_FILE_SIZE
-import magic
 
 
 class slack_message:
@@ -60,10 +59,11 @@ class slack_conversation:
 
 
 class ProcessedFile:
-    def __init__(self, file_bytes):
+    def __init__(self, file_type, file_bytes):
         if not isinstance(file_bytes, bytes):
             raise ValueError("file_bytes must be an instance of bytes")
-        self.mime_type = magic.from_buffer(file_bytes, mime=True)
+        file_bytes.seek(0)
+        self.file_type = file_type
         self.file_bytes = file_bytes
 
 
@@ -82,7 +82,7 @@ class TransformedSlackMessage:
     def add_file(self, file):
         if not isinstance(file, ProcessedFile):
             raise TypeError("file must be an instance of ProcessedFile")
-        self.files.append({"mime_type": file.mime_type, "file_bytes": file.file_bytes})
+        self.files.append(file)
 
 
 class TransformedSlackConversation:
@@ -95,3 +95,40 @@ class TransformedSlackConversation:
                 "processed message must be an instance of TransformedSlackMessage"
             )
         self.messages.append(processed_message)
+
+
+class AgentResponse:
+    def __init__(self):
+        self.text = ""
+        self.files = []
+        self.metadata = {}
+
+    def add_text(self, text):
+        self.text += text
+
+    def add_file(self, file):
+        if not isinstance(file, AgentResponseFile):
+            raise TypeError("file must be an instance of AgentResponseFile")
+        self.files.append(file)
+
+    def add_metadata(self, key, value):
+        self.metadata[key] = value
+
+
+class AgentResponseFile:
+    def __init__(self, file_bytes, title=None):
+        if not isinstance(file_bytes, bytes):
+            if isinstance(file_bytes, str):
+                file_bytes = file_bytes.encode()
+            elif hasattr(file_bytes, "read"):  # Check if it's a file-like object
+                file_bytes = file_bytes.read()
+                if not isinstance(file_bytes, bytes):
+                    raise TypeError(
+                        "file_bytes must be bytes after reading from file-like object"
+                    )
+            else:
+                raise TypeError(
+                    "file_bytes must be bytes, a string, or a file-like object"
+                )
+        self.file_bytes = file_bytes
+        self.title = title

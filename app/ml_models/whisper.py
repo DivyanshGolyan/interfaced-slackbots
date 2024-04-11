@@ -6,113 +6,95 @@ from LLM_clients.openai_client import client as openai_client
 from config import logger
 import openai
 from model_wrappers import ModelWrapper
-from app.config import WHISPER_MODEL
+from app.config import WHISPER_MODEL, WHISPER_CHUNK_LIMIT
+import asyncio
 
 
 class Whisper(ModelWrapper):
-    async def call_model(self, input_data):
+    async def call_model(self, file_type, file_bytes):
+        format = file_type
+        if not format:
+            raise ValueError("Unsupported MIME type")
         try:
-            file_content = input_data.get("file_content")
-            file_type = input_data.get("file_type")
-            if len(file_content.getbuffer()) > 25 * 1024 * 1024:
-                # logger.debug("Reading and splitting the audio into chunks...")
-                audio = AudioSegment.from_file(file_content, file_type)
-                audio_chunks = self.split_audio_into_chunks(
-                    audio, len(file_content.getbuffer())
-                )
-                # logger.debug(f"Created {len(audio_chunks)} audio chunks.")
-
-                # logger.debug("Transcribing audio chunks...")
-                transcriptions = await self.transcribe_audio_chunks(
-                    audio_chunks, file_type
-                )
-                # logger.debug("All chunks transcribed successfully.")
-
-                transcription_result = " ".join(transcriptions)
-                # logger.debug("Transcriptions joined successfully.")
-                return transcription_result
-            else:
-                file_content.seek(0)
-                # logger.debug("Transcribing the audio file...")
-                transcript = await self.transcribe_audio(file_content, file_type)
-                return [transcript]
+            audio = AudioSegment.from_file(file_bytes, format=format)
+            file_size = len(file_bytes.getbuffer())
+            audio_chunks = await self.split_audio_into_chunks(audio, file_size)
+            transcription_result = await self.transcribe_audio_chunks(
+                audio_chunks, format
+            )
+            del file_bytes  # Delete the original file_bytes to free up memory
+            return transcription_result
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
             raise e
 
-    def split_audio_into_chunks(self, audio, file_size):
+    async def split_audio_into_chunks(self, audio, file_size):
         """Split audio into manageable chunks."""
-        chunk_limit = 25 * 1024 * 1024  # 25MB
-        chunk_size_ms = (chunk_limit / file_size) * audio.duration_seconds * 1000
+        chunk_limit = WHISPER_CHUNK_LIMIT
+        duration_ms = int(audio.duration_seconds * 1000)
+        chunk_size_ms = (
+            int((chunk_limit / file_size) * duration_ms)
+            if file_size > chunk_limit
+            else duration_ms
+        )
         return [
-            audio[i : i + chunk_size_ms] for i in range(0, len(audio), chunk_size_ms)
+            audio[i : i + chunk_size_ms] for i in range(0, duration_ms, chunk_size_ms)
         ]
 
-    async def transcribe_audio_chunks(self, audio_chunks, file_type):
+    async def transcribe_audio_chunks(self, audio_chunks, format):
         """Transcribe multiple audio chunks."""
-        transcriptions = []
-        for idx, chunk in enumerate(audio_chunks):
-            try:
-                transcript = await self.transcribe_audio(
-                    io.BytesIO(chunk.raw_data), file_type
-                )
-                transcriptions.append(transcript)
-            except Exception as e:
-                logger.error(f"Error transcribing chunk {idx}: {e}")
-                raise e
-        return transcriptions
+        transcription_tasks = [
+            self.transcribe_audio_chunk(chunk, format) for chunk in audio_chunks
+        ]
+        transcriptions = await asyncio.gather(*transcription_tasks)
+        return " ".join(transcriptions)
 
-    async def transcribe_audio(self, audio_content, file_type):
-        """Transcribe audio content."""
-        with tempfile.NamedTemporaryFile(
-            suffix=f".{file_type}", delete=False
-        ) as tmp_file:
-            if isinstance(audio_content, io.BytesIO):
-                tmp_file.write(audio_content.getvalue())
-            else:
-                tmp_file.write(audio_content.read())
-            tmp_file.flush()
-            with open(tmp_file.name, "rb") as audio_file:
-                try:
-                    transcript = await openai_client.audio.transcribe(
-                        model=WHISPER_MODEL, file=audio_file
-                    )
-                except openai.APIConnectionError as e:
-                    logger.error("Connection error: The server could not be reached.")
-                    logger.error(f"Error details: {e}")
-                    raise e
-                except openai.RateLimitError as e:
-                    logger.error(
-                        "Rate limit exceeded: A 429 status code was received; we should back off a bit."
-                    )
-                    raise e
-                except openai.BadRequestError as e:
-                    logger.error("Bad request error: A 400 status code was received.")
-                    logger.error(
-                        f"Status code: {e.status_code}, Response: {e.response}"
-                    )
-                    raise e
-                except openai.AuthenticationError as e:
-                    logger.error(
-                        "Authentication error: A 401 status code was received; Authentication failed."
-                    )
-                    logger.error(
-                        f"Status code: {e.status_code}, Response: {e.response}"
-                    )
-                    raise e
-                except openai.PermissionDeniedError as e:
-                    logger.error(
-                        "Permission denied error: A 403 status code was received."
-                    )
-                    logger.error(
-                        f"Status code: {e.status_code}, Response: {e.response}"
-                    )
-                    raise e
-                except openai.NotFoundError as e:
-                    logger.error("Not found error: A 404 status code was received.")
-                    logger.error(
-                        f"Status code: {e.status_code}, Response: {e.response}"
-                    )
-                    raise e
-            os.remove(tmp_file.name)
+    async def transcribe_audio_chunk(self, chunk, format):
+        """Helper function to transcribe a single audio chunk."""
+        try:
+            with tempfile.NamedTemporaryFile(
+                suffix=f".{format}", delete=True
+            ) as tmp_file:
+                tmp_file.write(chunk.raw_data)
+                tmp_file.flush()
+                transcript = await self.transcribe_audio(tmp_file.name)
+                return transcript
+        except Exception as e:
+            logger.error(f"Error transcribing audio chunk: {e}")
+            raise e
+
+    async def transcribe_audio(self, file_path):
+        """Transcribe audio content from a file path."""
+        try:
+            with open(file_path, "rb") as audio_file:
+                transcript = await openai_client.audio.transcribe(
+                    model=WHISPER_MODEL, file=audio_file
+                )
+        except openai.APIConnectionError as e:
+            logger.error("Connection error: The server could not be reached.")
+            logger.error(f"Error details: {e}")
+            raise e
+        except openai.RateLimitError as e:
+            logger.error(
+                "Rate limit exceeded: A 429 status code was received; we should back off a bit."
+            )
+            raise e
+        except openai.BadRequestError as e:
+            logger.error("Bad request error: A 400 status code was received.")
+            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
+            raise e
+        except openai.AuthenticationError as e:
+            logger.error(
+                "Authentication error: A 401 status code was received; Authentication failed."
+            )
+            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
+            raise e
+        except openai.PermissionDeniedError as e:
+            logger.error("Permission denied error: A 403 status code was received.")
+            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
+            raise e
+        except openai.NotFoundError as e:
+            logger.error("Not found error: A 404 status code was received.")
+            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
+            raise e
         return transcript["text"]

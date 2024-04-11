@@ -24,10 +24,9 @@ class GPT(ModelWrapper):
                     f">Error: The response was cut off due to exceeding the maximum token limit.\n{message_content}",
                     None,
                     None,
-                    model,
                 )
             else:
-                return message_content, prompt_tokens, completion_tokens, model
+                return message_content, prompt_tokens, completion_tokens
 
         except openai.APIConnectionError as e:
             logger.error("Connection error: The server could not be reached.")
@@ -38,7 +37,7 @@ class GPT(ModelWrapper):
             logger.error(
                 "Rate limit exceeded: A 429 status code was received; we should back off a bit."
             )
-            return None, None, None, model
+            return None, None, None
 
         except openai.BadRequestError as e:
             logger.error("Bad request error: A 400 status code was received.")
@@ -48,7 +47,6 @@ class GPT(ModelWrapper):
                     f"Error: The conversation is too long. Please reduce the length and try again.",
                     None,
                     None,
-                    model,
                 )
             else:
                 raise e
@@ -90,4 +88,4 @@ class GPT(ModelWrapper):
         except Exception as e:
             logger.error("An unexpected error occurred.")
             logger.error(traceback.format_exc())
-            return f"Error: {e}", None, None, model
+            return f"Error: {e}", None, None

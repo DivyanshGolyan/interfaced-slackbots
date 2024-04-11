@@ -1,5 +1,5 @@
 import os
-from slack_bolt import App
+from slack_bolt.app.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 from flask import Flask
 from flask_caching import Cache
@@ -16,11 +16,18 @@ from app.config import (
     MYSQL_DB,
 )
 from app.slackbot.listeners import register_listeners
+from app.agents.agent_manager import AgentManager
+
+global_agent_manager = None
+
 
 db = SQLAlchemy()
 
 
 def create_app():
+    global global_agent_manager
+    global_agent_manager = AgentManager(SLACK_BOTS)
+
     flask_app = Flask(__name__)
 
     # Configure MySQL database
@@ -40,7 +47,7 @@ def create_app():
     # Initialize Slack Bolt apps for each bot using Socket Mode
     bolt_apps = {}
     for bot_name, bot_config in SLACK_BOTS.items():
-        bolt_app = App(token=bot_config["bot_token"], name=bot_name)
+        bolt_app = AsyncApp(token=bot_config["bot_token"], name=bot_name)
         handler = SocketModeHandler(bolt_app, bot_config["app_token"])
         bolt_apps[bot_name] = (bolt_app, handler)
 

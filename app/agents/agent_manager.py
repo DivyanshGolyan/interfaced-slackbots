@@ -1,13 +1,16 @@
+import importlib
+
+
 class Agent:
     def can_process_input(self, input_data):
         """Check if the input data type is supported by the agent."""
         raise NotImplementedError
 
-    def transform_input(self, input_data):
+    async def transform_input(self, input_data):
         """Transform input data into a format that can be processed by the agent."""
         raise NotImplementedError
 
-    def validate_input(self, input_data):
+    async def validate_input(self, input_data):
         """Validate the transformed input."""
         raise NotImplementedError
 
@@ -17,15 +20,17 @@ class Agent:
 
 
 class AgentManager:
-    def __init__(self):
+    def __init__(self, slack_bots_config):
         self.agents = {}
+        self.initialise_agents(slack_bots_config)
 
-    def register_agent(self, agent_name, agent):
-        self.agents[agent_name] = agent
+    def initialise_agents(self, slack_bots_config):
+        for bot_name, bot_info in slack_bots_config.items():
+            agent_class_str = bot_info["agent"]
+            module_name, class_name = agent_class_str.rsplit(".", 1)
+            module = importlib.import_module(module_name)
+            agent_class = getattr(module, class_name)
+            self.agents[bot_name] = agent_class()
 
-    async def handle_request(self, thread, agent_name):
-        agent = self.agents.get(agent_name)
-        if agent:
-            return await agent.process_request(thread)
-        else:
-            raise ValueError(f"No agent found for the given name: {agent_name}")
+    def get_agent(self, bot_name):
+        return self.agents.get(bot_name)
