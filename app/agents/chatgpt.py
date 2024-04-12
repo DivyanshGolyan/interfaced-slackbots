@@ -13,6 +13,7 @@ import pypdf.errors
 from app.config import logger
 from app.adapters.gpt_adapter import GPTAdapter
 import asyncio
+from app.exceptions import *
 
 
 class ChatGPT(Agent):
@@ -123,26 +124,25 @@ class ChatGPT(Agent):
             file_type, images_bytes = pdf_to_images(file_bytes)
             for image in images_bytes:
                 transformed_message.add_file(ProcessedFile(file_type, image))
-        except pypdf.errors.PdfStreamError as e:
-            logger.error(f"Stream error while reading PDF file: {e}")
-        except pypdf.errors.ParseError as e:
-            logger.error(f"Parse error in PDF file: {e}")
-        except pypdf.errors.PageSizeNotDefinedError as e:
-            logger.error(f"Page size not defined in PDF file: {e}")
-        except pypdf.errors.WrongPasswordError:
-            logger.error("Wrong password provided for encrypted PDF file.")
-        except pypdf.errors.FileNotDecryptedError:
-            logger.error(
-                "PDF file is encrypted and cannot be decrypted without a password."
+        except (
+            pypdf.errors.PdfStreamError,
+            pypdf.errors.ParseError,
+            pypdf.errors.PageSizeNotDefinedError,
+            pypdf.errors.WrongPasswordError,
+            pypdf.errors.FileNotDecryptedError,
+            pypdf.errors.EmptyFileError,
+            pypdf.errors.PdfReadError,
+        ) as e:
+            logger.error(f"PDF reading error: {e}")
+            raise PDFReadingError(
+                "There was an error processing the PDF file. Please ensure the file is not corrupted or encrypted with an unknown password."
             )
-        except pypdf.errors.EmptyFileError:
-            logger.error("PDF file is empty or corrupted.")
-        except pypdf.errors.PdfReadError as e:
-            logger.error(f"Failed to read PDF file: {e}")
-        except pypdf.PyPdfError as e:
-            logger.error(f"PDF processing error: {e}")
+        except PDFToImageConversionError as e:
+            logger.error(f"Error converting PDF to images: {e}")
+            raise e
         except Exception as e:
             logger.error(f"An unexpected error occurred while processing PDF: {e}")
+            raise e
 
     async def process_image(self, file_type, file_bytes, transformed_message):
         if file_type not in self.supported_image_types:
@@ -158,11 +158,18 @@ class ChatGPT(Agent):
             transformed_message.add_file(ProcessedFile(file_type, file_bytes))
 
     async def process_audio(self, file_type, file_bytes, transformed_message):
+        file_bytes.seek(0)
         if file_type not in self.supported_audio_types:
-            file_bytes.seek(0)
-            converted_file_type, converted_file_bytes = await convert_audio_to_mp3(
-                file_type, file_bytes
-            )
+            try:
+                converted_file_type, converted_file_bytes = await convert_audio_to_mp3(
+                    file_type, file_bytes
+                )
+            except Exception as e:
+                logger.error(f"Error converting audio to MP3: {e}")
+                supported_formats = ", ".join(self.supported_audio_types)
+                raise AudioProcessingError(
+                    f"Failed to convert the audio file to MP3 format, which is supported. Please ensure your file is in a compatible format and try again. Supported formats include: {supported_formats}."
+                )
             converted_file_bytes.seek(0)
             transcribed_text = await self.transcription_model.call_model(
                 converted_file_type, converted_file_bytes

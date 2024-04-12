@@ -8,38 +8,51 @@ import openai
 from model_wrappers import ModelWrapper
 from app.config import WHISPER_MODEL, WHISPER_CHUNK_LIMIT
 import asyncio
+from app.exceptions import *
 
 
 class Whisper(ModelWrapper):
     async def call_model(self, file_type, file_bytes):
         format = file_type
-        if not format:
-            raise ValueError("Unsupported MIME type")
         try:
             audio = AudioSegment.from_file(file_bytes, format=format)
+        except Exception as e:
+            logger.error(f"Error creating audio segment: {e}")
+            raise AudioProcessingError(
+                "Failed to process the audio file. Please ensure the file is not corrupted and is in a supported format."
+            )
+
+        try:
             file_size = len(file_bytes.getbuffer())
             audio_chunks = await self.split_audio_into_chunks(audio, file_size)
             transcription_result = await self.transcribe_audio_chunks(
                 audio_chunks, format
             )
-            del file_bytes  # Delete the original file_bytes to free up memory
+            del file_bytes
             return transcription_result
         except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
+            logger.error(f"An error occurred during audio processing: {e}")
             raise e
 
     async def split_audio_into_chunks(self, audio, file_size):
         """Split audio into manageable chunks."""
-        chunk_limit = WHISPER_CHUNK_LIMIT
-        duration_ms = int(audio.duration_seconds * 1000)
-        chunk_size_ms = (
-            int((chunk_limit / file_size) * duration_ms)
-            if file_size > chunk_limit
-            else duration_ms
-        )
-        return [
-            audio[i : i + chunk_size_ms] for i in range(0, duration_ms, chunk_size_ms)
-        ]
+        try:
+            chunk_limit = WHISPER_CHUNK_LIMIT
+            duration_ms = int(audio.duration_seconds * 1000)
+            chunk_size_ms = (
+                int((chunk_limit / file_size) * duration_ms)
+                if file_size > chunk_limit
+                else duration_ms
+            )
+            return [
+                audio[i : i + chunk_size_ms]
+                for i in range(0, duration_ms, chunk_size_ms)
+            ]
+        except Exception as e:
+            logger.error(f"Error splitting audio into chunks: {e}")
+            raise AudioProcessingError(
+                "Failed to split the audio into manageable chunks. Please ensure the audio file is not corrupted and try again."
+            )
 
     async def transcribe_audio_chunks(self, audio_chunks, format):
         """Transcribe multiple audio chunks."""
@@ -59,8 +72,13 @@ class Whisper(ModelWrapper):
                 tmp_file.flush()
                 transcript = await self.transcribe_audio(tmp_file.name)
                 return transcript
+        except WhisperProcessingError as e:
+            logger.error(
+                f"Whisper processing error while transcribing audio chunk: {e}"
+            )
+            raise e
         except Exception as e:
-            logger.error(f"Error transcribing audio chunk: {e}")
+            logger.error(f"General error transcribing audio chunk: {e}")
             raise e
 
     async def transcribe_audio(self, file_path):
@@ -70,31 +88,16 @@ class Whisper(ModelWrapper):
                 transcript = await openai_client.audio.transcribe(
                     model=WHISPER_MODEL, file=audio_file
                 )
-        except openai.APIConnectionError as e:
-            logger.error("Connection error: The server could not be reached.")
-            logger.error(f"Error details: {e}")
-            raise e
-        except openai.RateLimitError as e:
-            logger.error(
-                "Rate limit exceeded: A 429 status code was received; we should back off a bit."
+            return transcript["text"]
+        except (
+            openai.APIConnectionError,
+            openai.RateLimitError,
+            openai.BadRequestError,
+            openai.AuthenticationError,
+            openai.PermissionDeniedError,
+            openai.NotFoundError,
+        ) as e:
+            logger.error(f"{e.__class__.__name__} occurred: {e}")
+            raise WhisperProcessingError(
+                f"We encountered an issue while processing your audio file. Detailed error: {e}"
             )
-            raise e
-        except openai.BadRequestError as e:
-            logger.error("Bad request error: A 400 status code was received.")
-            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
-            raise e
-        except openai.AuthenticationError as e:
-            logger.error(
-                "Authentication error: A 401 status code was received; Authentication failed."
-            )
-            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
-            raise e
-        except openai.PermissionDeniedError as e:
-            logger.error("Permission denied error: A 403 status code was received.")
-            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
-            raise e
-        except openai.NotFoundError as e:
-            logger.error("Not found error: A 404 status code was received.")
-            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
-            raise e
-        return transcript["text"]

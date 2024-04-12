@@ -1,13 +1,14 @@
 from pdf2image import convert_from_bytes
-from typing import List
 import io
 import base64
 from app.config import logger
 from pydub import AudioSegment
 from PIL import Image
+from app.exceptions import *
+from typing import *
 
 
-async def pdf_to_images(pdf_bytes: bytes) -> List[bytes]:
+async def pdf_to_images(pdf_bytes: bytes) -> Tuple[str, List[bytes]]:
     try:
         images = convert_from_bytes(pdf_bytes)
         images_bytes = []
@@ -20,13 +21,21 @@ async def pdf_to_images(pdf_bytes: bytes) -> List[bytes]:
         return "jpeg", images_bytes
     except Exception as e:
         logger.error(f"Error converting PDF to images: {e}")
-        return None, []
+        raise PDFToImageConversionError(
+            "We encountered an issue while preparing your using your PDF. Please ensure your PDF is not corrupted and try again."
+        )
 
 
 async def image_bytes_to_base64(image_bytes: bytes) -> str:
-    base64_string = base64.b64encode(image_bytes).decode("utf-8")
-    del image_bytes  # Delete the original image bytes to free up memory
-    return base64_string
+    try:
+        base64_string = base64.b64encode(image_bytes).decode("utf-8")
+        del image_bytes  # Delete the original image bytes to free up memory
+        return base64_string
+    except Exception as e:
+        logger.error(f"Error converting image bytes to base64: {e}")
+        raise ImageProcessingError(
+            "We encountered an issue while processing your image. Please ensure your image is in a supported format and try again."
+        )
 
 
 async def convert_audio_to_mp3(file_type, file_bytes):
@@ -40,7 +49,7 @@ async def convert_audio_to_mp3(file_type, file_bytes):
         return "mp3", mp3_data
     except Exception as e:
         logger.error(f"Error converting audio to MP3: {e}")
-        return None
+        raise e
 
 
 async def convert_image_to_png(file_type, file_bytes):

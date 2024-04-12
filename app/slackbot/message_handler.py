@@ -1,16 +1,14 @@
 from app.database.dao import create_conversation, get_conversation, create_message
 from app.config import SLACK_BOTS
-from app.objects import slack_conversation
+from app.objects import *
 from app import agent_manager
+from contextlib import asynccontextmanager
+from app.exceptions import *
 
 
-async def process_message(app, event, say, bot_name):
-    slack_client = app.client
+async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
     bot_token = SLACK_BOTS.get(bot_name, {}).get("bot_token", "")
     agent = SLACK_BOTS.get(bot_name, {}).get("agent", "")
-    user_id = event.get("user")
-    channel_id = event.get("channel") or event.get("channel_id")
-    thread_ts = event.get("thread_ts") or event.get("ts")
     event_type = event.get("type")
     if event_type == "app_mention":
         thread_ts = thread_ts or event.get("item", {}).get("ts")
@@ -24,7 +22,10 @@ async def process_message(app, event, say, bot_name):
 
     agent_response = agent.process_conversation(thread_messages)
 
-    await send_response(slack_client, agent_response, channel_id, thread_ts, say)
+    if isinstance(agent_response, AgentResponse):
+        await send_response(slack_client, agent_response, channel_id, thread_ts)
+    else:
+        raise TypeError("agent_response must be a AgentResponse object")
 
     # # Get or create the conversation
     # conversation = await get_or_create_conversation(channel_id, thread_ts, user_id)
@@ -72,16 +73,12 @@ async def get_bot_user_id(client):
         return None, str(e)
 
 
-# def collect_inputs(event):
-#     inputs = {"text": event.get("text", ""), "files": []}
-#     if event.get("subtype") == "file_share":
-#         file_info = {
-#             # 'image', 'audio', etc.
-#             "type": event["file"]["mimetype"].split("/")[0],
-#             "url": event["file"]["url_private"],
-#         }
-#         inputs["files"].append(file_info)
-#     return inputs
+@asynccontextmanager
+async def handle_errors(client, channel_id, thread_ts):
+    try:
+        yield
+    except UserFacingError as e:
+        await send_response(client, AgentResponse(e), channel_id, thread_ts)
 
 
 # async def get_or_create_conversation(channel_id, thread_ts, user_id):
@@ -99,7 +96,7 @@ async def get_bot_user_id(client):
 #         await create_message(conversation_id, "bot", response["text"])
 
 
-async def send_response(client, agent_response, channel_id, thread_ts, say):
+async def send_response(client, agent_response, channel_id, thread_ts):
     if agent_response.files:
         file_uploads = []
         for file in agent_response.files:

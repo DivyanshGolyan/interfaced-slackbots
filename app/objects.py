@@ -98,8 +98,8 @@ class TransformedSlackConversation:
 
 
 class AgentResponse:
-    def __init__(self):
-        self.text = ""
+    def __init__(self, text=None):
+        self.text = text if text else ""
         self.files = []
         self.metadata = {}
 

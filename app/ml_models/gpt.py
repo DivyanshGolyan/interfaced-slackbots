@@ -4,6 +4,7 @@ import openai
 import traceback
 from model_wrappers import ModelWrapper
 from app.config import GPT_MODEL
+from app.exceptions import *
 
 
 class GPT(ModelWrapper):
@@ -33,20 +34,17 @@ class GPT(ModelWrapper):
             logger.error(f"Error details: {e}")
             raise e
 
-        except openai.RateLimitError as e:
-            logger.error(
-                "Rate limit exceeded: A 429 status code was received; we should back off a bit."
+        except openai.RateLimitError:
+            logger.error("Rate limit exceeded: Too many requests.")
+            raise GPTProcessingError(
+                "Rate limit exceeded. Please wait before sending more requests."
             )
-            return None, None, None
 
         except openai.BadRequestError as e:
             logger.error("Bad request error: A 400 status code was received.")
-            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
             if "context_length_exceeded" in str(e):
-                return (
-                    f"Error: The conversation is too long. Please reduce the length and try again.",
-                    None,
-                    None,
+                raise GPTProcessingError(
+                    "The conversation is too long. Please reduce the length and try again."
                 )
             else:
                 raise e
@@ -68,10 +66,13 @@ class GPT(ModelWrapper):
             logger.error(f"Status code: {e.status_code}, Response: {e.response}")
             raise e
 
-        except openai.UnprocessableEntityError as e:
-            logger.error("Unprocessable entity error: A 422 status code was received.")
-            logger.error(f"Status code: {e.status_code}, Response: {e.response}")
-            raise e
+        except openai.UnprocessableEntityError:
+            logger.error(
+                "Unprocessable entity error: The request could not be processed."
+            )
+            raise GPTProcessingError(
+                "The request could not be processed. Please modify your input and try again."
+            )
 
         except openai.InternalServerError as e:
             logger.error(
@@ -88,4 +89,4 @@ class GPT(ModelWrapper):
         except Exception as e:
             logger.error("An unexpected error occurred.")
             logger.error(traceback.format_exc())
-            return f"Error: {e}", None, None
+            raise GPTProcessingError(f"An unexpected error occurred: {e}")

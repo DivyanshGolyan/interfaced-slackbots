@@ -2,6 +2,7 @@ from app.adapters.base_adapter import LLMAdapter
 from app.utils.file_utils import image_bytes_to_base64
 from app.config import file_type_to_mime_type
 import asyncio
+from app.exceptions import *
 
 
 class GPTAdapter(LLMAdapter):
@@ -34,14 +35,21 @@ class GPTAdapter(LLMAdapter):
                 mime_type = file_type_to_mime_type.get(file_type)
                 if mime_type is None:
                     raise ValueError(f"MIME type not found for file type: {file_type}")
-                base64_image = await image_bytes_to_base64(file.file_bytes)
-                content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
-                    }
-                )
+                try:
+                    base64_image = await image_bytes_to_base64(file.file_bytes)
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{base64_image}"
+                            },
+                        }
+                    )
+                except ImageProcessingError as e:
+                    raise e
             else:
-                raise TypeError(f"Unsupported file type: {file_type}")
+                raise ImageProcessingError(
+                    f"Unsupported file type: {file_type}. Supported types are PNG, JPEG, JPG, WEBP, and GIF."
+                )
         message = {"role": role, "name": user_id, "content": content}
         return message
