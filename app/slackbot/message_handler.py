@@ -45,20 +45,31 @@ async def handle_agent_responses(
             await send_response(client, agent_response, channel_id, thread_ts)
             first_response = False
             accumulated_text += agent_response.text
+            bot_message_ts = await fetch_first_bot_message_ts_after_event(
+                client, channel_id, thread_ts, bot_user_id, user_message_ts
+            )
         else:
             accumulated_text += agent_response.text
-            if bot_message_ts is None:
-                bot_message_ts = await fetch_first_bot_message_ts_after_event(
-                    client, channel_id, thread_ts, bot_user_id, user_message_ts
-                )
             if bot_message_ts:
-                # Update the message with the accumulated text
-                await update_message_text(
-                    client,
-                    channel_id,
-                    bot_message_ts,
-                    AgentResponse(accumulated_text),
-                )
+                try:
+                    await update_message_text(
+                        client,
+                        channel_id,
+                        bot_message_ts,
+                        AgentResponse(accumulated_text),
+                    )
+                except Exception as e:
+                    # If updating fails, send a new message and reset accumulated_text
+                    bot_message_ts = await send_response(
+                        client,
+                        AgentResponse(agent_response.text),
+                        channel_id,
+                        thread_ts,
+                    )
+                    accumulated_text = agent_response.text
+                    # bot_message_ts = await fetch_first_bot_message_ts_after_event(
+                    #     client, channel_id, thread_ts, bot_user_id, user_message_ts
+                    # )
             else:
                 raise Exception(
                     "Failed to fetch bot message timestamp for updating message"
@@ -156,16 +167,24 @@ async def send_response(client, agent_response, channel_id, thread_ts):
                 }
             )
         initial_comment = agent_response.text if agent_response.text else None
-        await client.files_upload_v2(
+        response = await client.files_upload_v2(
             file_uploads=file_uploads,
             channel=channel_id,
             initial_comment=initial_comment,
             thread_ts=thread_ts,
         )
+        return (
+            response.get("file", {})
+            .get("shares", {})
+            .get("public", {})
+            .get(channel_id, [{}])[0]
+            .get("ts")
+        )
     elif agent_response.text:
-        await client.chat_postMessage(
+        response = await client.chat_postMessage(
             channel=channel_id, text=agent_response.text, thread_ts=thread_ts
         )
+        return response.get("ts")
 
 
 async def update_message_text(client, channel_id, bot_message_ts, agent_response):

@@ -2,9 +2,9 @@ from app.objects import *
 import re
 
 
-async def handle_stream(end_model, payload):
+async def handle_stream(end_model, payload, stream):
     text_buffer = ""  # Buffer to accumulate text
-    async for char_stream in end_model.call_model(payload, stream=True):
+    async for char_stream in end_model.call_model(payload, stream=stream):
         if char_stream is not None:
             text_buffer += char_stream  # Accumulate text from the stream
 

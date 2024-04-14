@@ -55,7 +55,7 @@ class ChatGPT(Agent):
         )
 
         # Call the external stream handling function and yield from it
-        async for response in handle_stream(self.end_model, payload):
+        async for response in handle_stream(self.end_model, payload, stream=True):
             yield response
 
     async def process_message(self, message):

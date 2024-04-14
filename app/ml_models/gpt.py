@@ -29,7 +29,7 @@ class GPT(ModelWrapper):
         except openai.APIConnectionError as e:
             logger.error("Connection error: The server could not be reached.")
             logger.error(f"Error details: {e}")
-            raise e
+            raise
 
         except openai.RateLimitError:
             logger.error("Rate limit exceeded: Too many requests.")
