@@ -1,82 +1,97 @@
 class UserFacingError(Exception):
     """Base class for other exceptions"""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
+        self.message = message
 
 
 class PDFProcessingError(UserFacingError):
     """Raised when there is an issue with PDF processing."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class PDFReadingError(PDFProcessingError):
     """Raised when there is an error reading the PDF file."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class PDFToImageConversionError(PDFProcessingError):
     """Raised when there is an error converting the PDF to an image."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class DataNotFoundError(UserFacingError):
     """Raised when required data is not found."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class ImageProcessingError(UserFacingError):
     """Raised when there is an issue with image processing."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class AudioProcessingError(UserFacingError):
     """Raised when there is an issue with audio processing."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class OpenAIError(UserFacingError):
     """Raised when there is an issue with OpenAI services."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class WhisperProcessingError(OpenAIError):
     """Raised when there is an issue with Whisper processing."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class GPTProcessingError(OpenAIError):
     """Raised when there is an issue with GPT model processing."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class DALLEProcessingError(OpenAIError):
     """Raised when there is an issue with DALL-E model processing."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class GeminiError(UserFacingError):
     """Raised when there is an issue with Gemini services."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class AnthropicError(UserFacingError):
     """Raised when there is an issue with Anthropic services."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class StabilityError(UserFacingError):
     """Raised when there is a stability issue in the system."""
 
-    pass
+    def __init__(self, message=None):
+        super().__init__(message)

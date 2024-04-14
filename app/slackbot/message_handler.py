@@ -79,7 +79,7 @@ async def handle_errors(client, channel_id, thread_ts):
     try:
         yield
     except UserFacingError as e:
-        await send_response(client, AgentResponse(e), channel_id, thread_ts)
+        await send_response(client, AgentResponse(e.message), channel_id, thread_ts)
 
 
 # async def get_or_create_conversation(channel_id, thread_ts, user_id):

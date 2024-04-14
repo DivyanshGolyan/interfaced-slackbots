@@ -1,6 +1,35 @@
 import aiohttp
 import io
 from app.config import MAX_SLACK_FILE_SIZE
+from app.utils.file_utils import get_mime_type_from_url
+
+
+class slack_file:
+    def __init__(self, file_data):
+        self.id = file_data.get("id")
+        self.created = file_data.get("created")
+        self.timestamp = file_data.get("timestamp")
+        self.name = file_data.get("name")
+        self.title = file_data.get("title")
+        self.pretty_type = file_data.get("pretty_type")
+        self.user = file_data.get("user")
+        self.size = file_data.get("size")
+        self.url_private = file_data.get("url_private")
+        self.url_private_download = file_data.get("url_private_download")
+        self.permalink = file_data.get("permalink")
+        self.permalink_public = file_data.get("permalink_public")
+        self.media_display_type = file_data.get("media_display_type")
+        self.mode = file_data.get("mode")
+        # Override file_type and mime_type
+        if self.url_private:
+            self.filetype = self.url_private.split(".")[-1]
+        else:
+            self.filetype = file_data.get("filetype")
+
+        mime_type_from_url = get_mime_type_from_url(
+            self.filetype, self.media_display_type
+        )
+        self.mimetype = mime_type_from_url if mime_type_from_url else self.mimetype
 
 
 class slack_message:
@@ -10,16 +39,18 @@ class slack_message:
         self.bot_user_id = bot_user_id
         self.ts = message_data.get("ts")
         self.text = message_data.get("text")
-        self._files = message_data.get("files", [])
+        self._files = [
+            slack_file(file_data) for file_data in message_data.get("files", [])
+        ]
         self._file_contents = {}
 
     @property
     def files(self):
         return self._files.copy()
 
-    async def get_file_content(self, file_metadata):
-        file_url = file_metadata.get("url_private", "")
-        file_size = file_metadata.get("size", 0)
+    async def get_file_content(self, file):
+        file_url = file.url_private
+        file_size = file.size
 
         if not file_url:
             raise ValueError("File URL is missing")

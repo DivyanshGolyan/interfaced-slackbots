@@ -1,3 +1,7 @@
+import sys
+
+sys.path.insert(0, "/Users/divyanshgolyan/Documents/GitHub/interaced-slackbots")
+
 import asyncio
 from app import create_app
 

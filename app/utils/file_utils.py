@@ -1,7 +1,7 @@
 from pdf2image import convert_from_bytes
 import io
 import base64
-from app.config import logger
+from app.config import *
 from pydub import AudioSegment
 from PIL import Image
 from app.exceptions import *
@@ -44,19 +44,19 @@ async def image_bytes_to_base64(image_bytes: bytes) -> str:
 
 
 async def convert_audio_to_mp3(file_type, file_bytes):
+    if not isinstance(file_bytes, bytes):
+        raise TypeError("file_bytes must be of type bytes")
     try:
-        # Ensure file_bytes is a file-like object
-        if isinstance(file_bytes, bytes):
-            file = io.BytesIO(file_bytes)
-            file.seek(0)
-            format = file_type
-            audio = AudioSegment.from_file(file, format=format)
-            output_buffer = io.BytesIO()
-            audio.export(output_buffer, format="mp3")
-            mp3_data = output_buffer.getvalue()
-            del file_bytes
-            del file  # Delete the original file bytes to free up memory
-            return "mp3", mp3_data
+        file = io.BytesIO(file_bytes)
+        file.seek(0)
+        format = file_type
+        audio = AudioSegment.from_file(file, format=format)
+        output_buffer = io.BytesIO()
+        audio.export(output_buffer, format="mp3")
+        mp3_data = output_buffer.getvalue()
+        del file_bytes
+        del file  # Delete the original file bytes to free up memory
+        return "mp3", mp3_data
     except Exception as e:
         logger.error(f"Error converting audio to MP3: {e}")
         raise e
@@ -81,3 +81,19 @@ async def convert_image_to_png(file_type, file_bytes):
     except Exception as e:
         logger.error(f"Error converting {file_type} image to png: {e}")
         raise e
+
+
+def get_mime_type_from_url(file_type, media_display_type):
+    """
+    Extracts the file extension from the URL and returns the corresponding MIME type,
+    considering the media display type (audio or video).
+    """
+
+    file_type
+    mime_type_entry = file_type_to_mime_type.get(file_type)
+
+    if isinstance(mime_type_entry, dict):
+        # If the entry is a dictionary, use the media_display_type to determine the specific MIME type
+        return mime_type_entry.get(media_display_type)
+    else:
+        return mime_type_entry

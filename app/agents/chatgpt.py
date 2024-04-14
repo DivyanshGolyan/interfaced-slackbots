@@ -1,16 +1,12 @@
 from app.agents.agent_manager import Agent
 from app.ml_models.gpt import GPT
 from app.ml_models.whisper import Whisper
-from app.utils.file_utils import (
-    pdf_to_images,
-    convert_image_to_png,
-    convert_audio_to_mp3,
-)
+from app.utils.file_utils import *
 from app.objects import *
 from contextlib import closing
 import pypdf
 import pypdf.errors
-from app.config import logger
+from app.config import *
 from app.adapters.gpt_adapter import GPTAdapter
 import asyncio
 from app.exceptions import *
@@ -57,8 +53,8 @@ class ChatGPT(Agent):
             transformed_conversation
         )
 
-        text_response, prompt_tokens, completion_tokens = self.end_model.call_model(
-            payload
+        text_response, prompt_tokens, completion_tokens = (
+            await self.end_model.call_model(payload)
         )
 
         agent_response = AgentResponse()
@@ -88,10 +84,13 @@ class ChatGPT(Agent):
                 "transformed_message is not a TransformedSlackMessage object"
             )
 
+        if not isinstance(file, slack_file):
+            raise TypeError("file is not a slack_file object")
+
         mime_type = file.mimetype
-        file_type = file.filetype
         mode = file.mode
         file_name = file.name
+        file_type = file.filetype
 
         if any(
             mime_type.startswith(category)
@@ -117,9 +116,9 @@ class ChatGPT(Agent):
 
     async def process_pdf(self, file_bytes, transformed_message):
         try:
-            pdf_reader = pypdf.PdfReader(file_bytes)
+            pdf_reader = pypdf.PdfReader(io.BytesIO(file_bytes))
             # file_bytes.seek(0)
-            file_type, images_bytes = pdf_to_images(file_bytes)
+            file_type, images_bytes = await pdf_to_images(file_bytes)
             for image in images_bytes:
                 transformed_message.add_file(ProcessedFile(file_type, image))
         except (

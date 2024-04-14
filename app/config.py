@@ -56,7 +56,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-MAX_SLACK_FILE_SIZE = os.environ.get("MAX_SLACK_FILE_SIZE")
+MAX_SLACK_FILE_SIZE = int(os.environ.get("MAX_SLACK_FILE_SIZE"))
 GPT_MODEL = os.environ.get("GPT_MODEL")
 DALLE_MODEL = os.environ.get("DALLE_MODEL")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL")
@@ -442,7 +442,7 @@ file_type_to_mime_type = {
     "mp2": "audio/mpeg",
     "mp2a": "audio/mpeg",
     "mp3": "audio/mpeg",
-    "mp4": "video/mp4",
+    "mp4": {"audio": "audio/mp4", "video": "video/mp4"},
     "mp4a": "audio/mp4",
     "mp4s": "application/mp4",
     "mp4v": "video/mp4",
