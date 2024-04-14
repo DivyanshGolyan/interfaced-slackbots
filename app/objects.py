@@ -62,7 +62,6 @@ class ProcessedFile:
     def __init__(self, file_type, file_bytes):
         if not isinstance(file_bytes, bytes):
             raise ValueError("file_bytes must be an instance of bytes")
-        file_bytes.seek(0)
         self.file_type = file_type
         self.file_bytes = file_bytes
 

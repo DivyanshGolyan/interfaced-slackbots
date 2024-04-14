@@ -58,6 +58,12 @@ class GPTProcessingError(OpenAIError):
     pass
 
 
+class DALLEProcessingError(OpenAIError):
+    """Raised when there is an issue with DALL-E model processing."""
+
+    pass
+
+
 class GeminiError(UserFacingError):
     """Raised when there is an issue with Gemini services."""
 

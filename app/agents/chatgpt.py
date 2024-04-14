@@ -1,4 +1,4 @@
-from agent_manager import Agent
+from app.agents.agent_manager import Agent
 from app.ml_models.gpt import GPT
 from app.ml_models.whisper import Whisper
 from app.utils.file_utils import (
@@ -100,7 +100,6 @@ class ChatGPT(Agent):
             file_bytes = await message.get_file_content(file)
             if not isinstance(file_bytes, bytes):
                 raise TypeError("file_bytes is not a bytes object")
-            file_bytes.seek(0)
 
             if mime_type.startswith("text/") or mode in ["snippet", "post"]:
                 with closing(file_bytes):
@@ -117,10 +116,9 @@ class ChatGPT(Agent):
                 await self.process_audio(file_type, file_bytes, transformed_message)
 
     async def process_pdf(self, file_bytes, transformed_message):
-        file_bytes.seek(0)
         try:
             pdf_reader = pypdf.PdfReader(file_bytes)
-            file_bytes.seek(0)
+            # file_bytes.seek(0)
             file_type, images_bytes = pdf_to_images(file_bytes)
             for image in images_bytes:
                 transformed_message.add_file(ProcessedFile(file_type, image))
@@ -146,11 +144,11 @@ class ChatGPT(Agent):
 
     async def process_image(self, file_type, file_bytes, transformed_message):
         if file_type not in self.supported_image_types:
-            file_bytes.seek(0)
+            # file_bytes.seek(0)
             converted_file_type, converted_file_bytes = await convert_image_to_png(
                 file_type, file_bytes
             )
-            file_bytes.seek(0)
+            # file_bytes.seek(0)
             transformed_message.add_file(
                 ProcessedFile(converted_file_type, converted_file_bytes)
             )
@@ -158,7 +156,7 @@ class ChatGPT(Agent):
             transformed_message.add_file(ProcessedFile(file_type, file_bytes))
 
     async def process_audio(self, file_type, file_bytes, transformed_message):
-        file_bytes.seek(0)
+        # file_bytes.seek(0)
         if file_type not in self.supported_audio_types:
             try:
                 converted_file_type, converted_file_bytes = await convert_audio_to_mp3(
@@ -170,7 +168,7 @@ class ChatGPT(Agent):
                 raise AudioProcessingError(
                     f"Failed to convert the audio file to MP3 format, which is supported. Please ensure your file is in a compatible format and try again. Supported formats include: {supported_formats}."
                 )
-            converted_file_bytes.seek(0)
+            # converted_file_bytes.seek(0)
             transcribed_text = await self.transcription_model.call_model(
                 converted_file_type, converted_file_bytes
             )

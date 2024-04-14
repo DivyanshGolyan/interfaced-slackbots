@@ -2,21 +2,20 @@ import importlib
 
 
 class Agent:
-    def can_process_input(self, input_data):
-        """Check if the input data type is supported by the agent."""
-        raise NotImplementedError
+    def __init__(self):
+        self.supported_mime_categories = []
+        self.supported_file_types = {}
+        self.model_adapter = None
+        self.end_model = None
 
-    async def transform_input(self, input_data):
-        """Transform input data into a format that can be processed by the agent."""
-        raise NotImplementedError
+    async def process_conversation(self, conversation):
+        raise NotImplementedError("This method should be implemented by subclasses.")
 
-    async def validate_input(self, input_data):
-        """Validate the transformed input."""
-        raise NotImplementedError
+    async def process_message(self, message):
+        raise NotImplementedError("This method should be implemented by subclasses.")
 
-    async def process_request(self, input_data):
-        """Process the request after the validation."""
-        raise NotImplementedError
+    async def process_file(self, file, message, transformed_message):
+        raise NotImplementedError("This method should be implemented by subclasses.")
 
 
 class AgentManager:

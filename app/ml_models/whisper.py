@@ -2,11 +2,10 @@ import io
 import os
 import tempfile
 from pydub import AudioSegment
-from LLM_clients.openai_client import client as openai_client
-from config import logger
+from app.LLM_clients.openai_client import client as openai_client
 import openai
-from model_wrappers import ModelWrapper
-from app.config import WHISPER_MODEL, WHISPER_CHUNK_LIMIT
+from app.ml_models.model_wrappers import ModelWrapper
+from app.config import WHISPER_MODEL, WHISPER_CHUNK_LIMIT, logger
 import asyncio
 from app.exceptions import *
 
@@ -15,7 +14,8 @@ class Whisper(ModelWrapper):
     async def call_model(self, file_type, file_bytes):
         format = file_type
         try:
-            audio = AudioSegment.from_file(file_bytes, format=format)
+            file = io.BytesIO(file_bytes)
+            audio = AudioSegment.from_file(file, format=format)
         except Exception as e:
             logger.error(f"Error creating audio segment: {e}")
             raise AudioProcessingError(
@@ -23,12 +23,13 @@ class Whisper(ModelWrapper):
             )
 
         try:
-            file_size = len(file_bytes.getbuffer())
+            file_size = len(file.getbuffer())
             audio_chunks = await self.split_audio_into_chunks(audio, file_size)
             transcription_result = await self.transcribe_audio_chunks(
                 audio_chunks, format
             )
             del file_bytes
+            del file
             return transcription_result
         except Exception as e:
             logger.error(f"An error occurred during audio processing: {e}")
@@ -68,8 +69,7 @@ class Whisper(ModelWrapper):
             with tempfile.NamedTemporaryFile(
                 suffix=f".{format}", delete=True
             ) as tmp_file:
-                tmp_file.write(chunk.raw_data)
-                tmp_file.flush()
+                chunk.export(tmp_file.name, format=format)
                 transcript = await self.transcribe_audio(tmp_file.name)
                 return transcript
         except WhisperProcessingError as e:
@@ -85,10 +85,10 @@ class Whisper(ModelWrapper):
         """Transcribe audio content from a file path."""
         try:
             with open(file_path, "rb") as audio_file:
-                transcript = await openai_client.audio.transcribe(
+                transcript = await openai_client.audio.transcriptions.create(
                     model=WHISPER_MODEL, file=audio_file
                 )
-            return transcript["text"]
+                return transcript.text
         except (
             openai.APIConnectionError,
             openai.RateLimitError,

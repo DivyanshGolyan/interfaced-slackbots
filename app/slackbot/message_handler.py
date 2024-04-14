@@ -1,9 +1,11 @@
-from app.database.dao import create_conversation, get_conversation, create_message
+# from app.database.dao import create_conversation, get_conversation, create_message
 from app.config import SLACK_BOTS
 from app.objects import *
-from app import agent_manager
 from contextlib import asynccontextmanager
 from app.exceptions import *
+from app.agents.agent_manager import AgentManager
+
+agent_manager = AgentManager(SLACK_BOTS)
 
 
 async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
@@ -17,10 +19,9 @@ async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
     thread_messages = await fetch_thread_messages(
         slack_client, channel_id, thread_ts, bot_token, bot_user_id
     )
-
     agent = agent_manager.get_agent(bot_name)
 
-    agent_response = agent.process_conversation(thread_messages)
+    agent_response = await agent.process_conversation(thread_messages)
 
     if isinstance(agent_response, AgentResponse):
         await send_response(slack_client, agent_response, channel_id, thread_ts)

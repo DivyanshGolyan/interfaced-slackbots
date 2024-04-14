@@ -1,9 +1,8 @@
-from LLM_clients.openai_client import client as openai_client
-from config import logger
+from app.LLM_clients.openai_client import client as openai_client
 import openai
 import traceback
-from model_wrappers import ModelWrapper
-from app.config import GPT_MODEL
+from app.ml_models.model_wrappers import ModelWrapper
+from app.config import *
 from app.exceptions import *
 
 
