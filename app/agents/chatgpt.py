@@ -10,6 +10,7 @@ from app.config import *
 from app.adapters.gpt_adapter import GPTAdapter
 import asyncio
 from app.exceptions import *
+from app.utils.stream_to_message import *
 
 
 class ChatGPT(Agent):
@@ -53,16 +54,9 @@ class ChatGPT(Agent):
             transformed_conversation
         )
 
-        text_response, prompt_tokens, completion_tokens = (
-            await self.end_model.call_model(payload)
-        )
-
-        agent_response = AgentResponse()
-        agent_response.add_text(text_response)
-        agent_response.add_metadata("prompt_tokens", prompt_tokens)
-        agent_response.add_metadata("completion_tokens", completion_tokens)
-
-        return agent_response
+        # Call the external stream handling function and yield from it
+        async for response in handle_stream(self.end_model, payload):
+            yield response
 
     async def process_message(self, message):
         if not isinstance(message, slack_message):

@@ -1,3 +1,3 @@
 class ModelWrapper:
-    async def call_model(self, input_data):
+    async def call_model(self, input_data, stream):
         raise NotImplementedError

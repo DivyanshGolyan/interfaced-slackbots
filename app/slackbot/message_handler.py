@@ -12,8 +12,10 @@ async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
     bot_token = SLACK_BOTS.get(bot_name, {}).get("bot_token", "")
     agent = SLACK_BOTS.get(bot_name, {}).get("agent", "")
     event_type = event.get("type")
+    user_message_ts = event.get("ts")
     if event_type == "app_mention":
-        thread_ts = thread_ts or event.get("item", {}).get("ts")
+        user_message_ts = event.get("item", {}).get("ts")
+        thread_ts = thread_ts or user_message_ts
     bot_user_id = await get_bot_user_id(slack_client)
 
     thread_messages = await fetch_thread_messages(
@@ -21,20 +23,34 @@ async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
     )
     agent = agent_manager.get_agent(bot_name)
 
-    agent_response = await agent.process_conversation(thread_messages)
+    response_generator = agent.process_conversation(thread_messages)
+    first_response = True
+    bot_message_ts = None
+    accumulated_text = ""
 
-    if isinstance(agent_response, AgentResponse):
-        await send_response(slack_client, agent_response, channel_id, thread_ts)
-    else:
-        raise TypeError("agent_response must be a AgentResponse object")
-
-    # # Get or create the conversation
-    # conversation = await get_or_create_conversation(channel_id, thread_ts, user_id)
-
-    # # Save the user's message and the bot's response to the database
-    # await save_message(conversation.id, user_id, inputs, response)
-
-    # await process_response(response, channel_id, thread_ts, say, is_stream=True)
+    async for agent_response in response_generator:
+        if first_response:
+            await send_response(slack_client, agent_response, channel_id, thread_ts)
+            first_response = False
+            accumulated_text += agent_response.text
+        else:
+            accumulated_text += agent_response.text
+            if bot_message_ts is None:
+                bot_message_ts = await fetch_first_bot_message_ts_after_event(
+                    slack_client, channel_id, thread_ts, bot_user_id, user_message_ts
+                )
+            if bot_message_ts:
+                # Update the message with the accumulated text
+                await update_message_text(
+                    slack_client,
+                    channel_id,
+                    bot_message_ts,
+                    AgentResponse(accumulated_text),
+                )
+            else:
+                raise Exception(
+                    "Failed to fetch bot message timestamp for updating message"
+                )
 
 
 async def fetch_thread_messages(client, channel_id, thread_ts, bot_token, bot_user_id):
@@ -65,6 +81,41 @@ async def fetch_thread_messages(client, channel_id, thread_ts, bot_token, bot_us
         raise Exception(f"Error fetching thread messages: {str(e)}")
 
 
+async def fetch_first_bot_message_ts_after_event(
+    client, channel_id, thread_ts, bot_user_id, user_message_ts
+):
+    cursor = None
+    try:
+        while True:
+            response = await client.conversations_replies(
+                channel=channel_id,
+                ts=thread_ts,
+                cursor=cursor,
+                limit=200,  # Recommended limit for batch processing
+            )
+            if response["ok"]:
+                messages = response["messages"]
+                # Filter messages to find the first bot message after the specified user message timestamp
+                for message in messages:
+                    if message.get("user") == bot_user_id and float(
+                        message.get("ts")
+                    ) > float(user_message_ts):
+                        return message.get(
+                            "ts"
+                        )  # Return the timestamp of the first bot message after the user message ts
+                # Check for the presence of a "next_cursor" to continue pagination
+                cursor = response.get("response_metadata", {}).get("next_cursor")
+                if not cursor:
+                    break
+            else:
+                raise Exception(f"Failed to fetch messages: {response['error']}")
+    except Exception as e:
+        raise Exception(
+            f"Error fetching first bot message timestamp after {user_message_ts}: {str(e)}"
+        )
+    return None  # Return None if no suitable bot message is found
+
+
 async def get_bot_user_id(client):
     try:
         response = await client.auth_test()
@@ -80,21 +131,6 @@ async def handle_errors(client, channel_id, thread_ts):
         yield
     except UserFacingError as e:
         await send_response(client, AgentResponse(e.message), channel_id, thread_ts)
-
-
-# async def get_or_create_conversation(channel_id, thread_ts, user_id):
-#     conversation = await get_conversation(channel_id, thread_ts)
-#     if not conversation:
-#         conversation = await create_conversation(user_id, channel_id, thread_ts)
-#     return conversation
-
-
-# async def save_message(conversation_id, user_id, inputs, response):
-#     # Save user's message
-#     await create_message(conversation_id, user_id, str(inputs))
-#     # Save bot's response (text portion)
-#     if "text" in response:
-#         await create_message(conversation_id, "bot", response["text"])
 
 
 async def send_response(client, agent_response, channel_id, thread_ts):
@@ -120,27 +156,7 @@ async def send_response(client, agent_response, channel_id, thread_ts):
         )
 
 
-# async def process_response(response, channel_id, thread_ts, say, is_stream=False):
-#     if is_stream:
-#         await handle_streamed_response(response, channel_id, thread_ts, say)
-#     else:
-#         await send_response(response, channel_id, thread_ts, say)
-
-
-# async def handle_streamed_response(stream, channel_id, thread_ts, say, batch_by="."):
-#     """
-#     Handles the streamed response, batching it based on the specified character (default is period for sentences),
-#     and sends the batched response to the user.
-#     """
-#     batched_text = ""
-#     for chunk in stream:
-#         if chunk.choices[0].delta.content is not None:
-#             content = chunk.choices[0].delta.content
-#             batched_text += content
-#             # Batch by the specified character (e.g., end of a sentence)
-#             if content.endswith(batch_by):
-#                 await send_response({"text": batched_text}, channel_id, thread_ts, say)
-#                 batched_text = ""
-#     # Send any remaining text that didn't end with the batch character
-#     if batched_text:
-#         await send_response({"text": batched_text}, channel_id, thread_ts, say)
+async def update_message_text(client, channel_id, bot_message_ts, agent_response):
+    await client.chat_update(
+        channel=channel_id, ts=bot_message_ts, text=agent_response.text
+    )

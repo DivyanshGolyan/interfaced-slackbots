@@ -7,26 +7,24 @@ from app.exceptions import *
 
 
 class GPT(ModelWrapper):
-    async def call_model(self, input_data):
+    async def call_model(self, input_data, stream=False):
         model = GPT_MODEL
         try:
-            response = await openai_client.chat.completions.create(
-                model=model, messages=input_data
-            )
-            choice = response.choices[0]
-            finish_reason = choice.finish_reason
-            message_content = choice.message.content
-            prompt_tokens = response.usage.prompt_tokens
-            completion_tokens = response.usage.completion_tokens
-
-            if finish_reason == "length":
-                return (
-                    f">Error: The response was cut off due to exceeding the maximum token limit.\n{message_content}",
-                    None,
-                    None,
+            if stream:
+                response = await openai_client.chat.completions.create(
+                    model=model, messages=input_data, stream=True
                 )
+                async for chunk in response:
+                    yield chunk.choices[
+                        0
+                    ].delta.content  # Yield each chunk as it arrives
             else:
-                return message_content, prompt_tokens, completion_tokens
+                response = await openai_client.chat.completions.create(
+                    model=model, messages=input_data
+                )
+                choice = response.choices[0]
+                message_content = choice.message.content
+                yield message_content  # Return the complete message content
 
         except openai.APIConnectionError as e:
             logger.error("Connection error: The server could not be reached.")
