@@ -14,7 +14,6 @@ async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
     event_type = event.get("type")
     user_message_ts = event.get("ts")
     if event_type == "app_mention":
-        user_message_ts = event.get("item", {}).get("ts")
         thread_ts = thread_ts or user_message_ts
     bot_user_id = await get_bot_user_id(slack_client)
 
@@ -24,25 +23,38 @@ async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
     agent = agent_manager.get_agent(bot_name)
 
     response_generator = agent.process_conversation(thread_messages)
+    await handle_agent_responses(
+        slack_client,
+        response_generator,
+        channel_id,
+        thread_ts,
+        bot_user_id,
+        user_message_ts,
+    )
+
+
+async def handle_agent_responses(
+    client, response_generator, channel_id, thread_ts, bot_user_id, user_message_ts
+):
     first_response = True
     bot_message_ts = None
     accumulated_text = ""
 
     async for agent_response in response_generator:
         if first_response:
-            await send_response(slack_client, agent_response, channel_id, thread_ts)
+            await send_response(client, agent_response, channel_id, thread_ts)
             first_response = False
             accumulated_text += agent_response.text
         else:
             accumulated_text += agent_response.text
             if bot_message_ts is None:
                 bot_message_ts = await fetch_first_bot_message_ts_after_event(
-                    slack_client, channel_id, thread_ts, bot_user_id, user_message_ts
+                    client, channel_id, thread_ts, bot_user_id, user_message_ts
                 )
             if bot_message_ts:
                 # Update the message with the accumulated text
                 await update_message_text(
-                    slack_client,
+                    client,
                     channel_id,
                     bot_message_ts,
                     AgentResponse(accumulated_text),
