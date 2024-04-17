@@ -37,7 +37,7 @@ class ChatGPT(Agent):
         self.model_adapter = GPTAdapter()
         self.end_model = GPT()
 
-    async def process_conversation(self, conversation):
+    async def process_conversation(self, conversation, system_prompt=None, stream=True):
         if not isinstance(conversation, slack_conversation):
             raise TypeError("conversation is not a slack_conversation object")
 
@@ -51,11 +51,11 @@ class ChatGPT(Agent):
             transformed_conversation.add_message(transformed_message)
 
         payload = await self.model_adapter.convert_conversation(
-            transformed_conversation
+            transformed_conversation, system_prompt
         )
 
         # Call the external stream handling function and yield from it
-        async for response in handle_stream(self.end_model, payload, stream=True):
+        async for response in handle_stream(self.end_model, payload, stream=stream):
             yield response
 
     async def process_message(self, message):

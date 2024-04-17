@@ -23,12 +23,18 @@ SLACK_BOTS = {
         "app_token": os.environ.get("CLAUDE_SLACK_APP_TOKEN"),
         "agent": "app.agents.claude.Claude",
     },
+    "stable_diffusion": {
+        "bot_token": os.environ.get("STABLE_DIFF_SLACK_BOT_TOKEN"),
+        "app_token": os.environ.get("STABLE_DIFF_SLACK_APP_TOKEN"),
+        "agent": "app.agents.stable_diffusion.StableDiffusion",
+    },
 }
 
 
 # LLM API credentials
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+STABILITY_API_KEY = os.environ.get("STABILITY_API_KEY")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
 # # MySQL database connection settings

@@ -76,6 +76,13 @@ class DALLEProcessingError(OpenAIError):
         super().__init__(message)
 
 
+class SDProcessingError(OpenAIError):
+    """Raised when there is an issue with Stable Diffusion processing."""
+
+    def __init__(self, message=None):
+        super().__init__(message)
+
+
 class GeminiError(UserFacingError):
     """Raised when there is an issue with Gemini services."""
 
