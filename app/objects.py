@@ -29,7 +29,9 @@ class slack_file:
         mime_type_from_url = get_mime_type_from_url(
             self.filetype, self.media_display_type
         )
-        self.mimetype = mime_type_from_url if mime_type_from_url else self.mimetype
+        self.mimetype = (
+            mime_type_from_url if mime_type_from_url else file_data.get("mimetype")
+        )
 
 
 class slack_message:
@@ -148,7 +150,8 @@ class AgentResponse:
 
 
 class AgentResponseFile:
-    def __init__(self, file_bytes, title=None):
+
+    def __init__(self, file_bytes, filename, title=None):
         if not isinstance(file_bytes, bytes):
             if isinstance(file_bytes, str):
                 file_bytes = file_bytes.encode()
@@ -164,6 +167,7 @@ class AgentResponseFile:
                 )
         self.file_bytes = file_bytes
         self.title = title
+        self.filename = filename
 
 
 class SlackTextMessage:
@@ -209,6 +213,7 @@ class SlackFileMessage:
             self.file_uploads.append(
                 {
                     "content": file.file_bytes,
+                    "filename": file.filename,
                     "title": (file.title if file.title else None),
                 }
             )

@@ -8,17 +8,18 @@ load_dotenv(".env")
 
 # Slack API credentials
 SLACK_BOTS = {
-    "chatgpt": {
-        "bot_token": os.environ.get("CHATGPT_SLACK_BOT_TOKEN"),
-        "app_token": os.environ.get("CHATGPT_SLACK_APP_TOKEN"),
-        "agent": "app.agents.chatgpt.ChatGPT",
-    },
     "dalle": {
         "bot_token": os.environ.get("DALLE_SLACK_BOT_TOKEN"),
         "app_token": os.environ.get("DALLE_SLACK_APP_TOKEN"),
         "agent": "app.agents.dalle.DALLE",
     },
+    "chatgpt": {
+        "bot_token": os.environ.get("CHATGPT_SLACK_BOT_TOKEN"),
+        "app_token": os.environ.get("CHATGPT_SLACK_APP_TOKEN"),
+        "agent": "app.agents.chatgpt.ChatGPT",
+    },
 }
+
 
 # LLM API credentials
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")

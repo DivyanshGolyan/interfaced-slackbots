@@ -10,4 +10,5 @@
 – add the bot to the SLACK_BOTS dictionary
 – if required, create a new llm client
 – create a new ml model
-– 
+– create an adapter
+– create an agent

@@ -8,12 +8,21 @@ from flask_sqlalchemy import SQLAlchemy
 from app.utils.logging import setup_logging, get_logger
 from app.config import *
 from app.slackbot.listeners import register_listeners
+import asyncio
 
 # db = SQLAlchemy()
+
+import dotenv
+
+load_dotenv()
 
 
 async def create_app():
     flask_app = Flask(__name__)
+
+    # Set up logging
+    setup_logging()
+    logger = get_logger(__name__)
 
     # Configure MySQL database
     # flask_app.config["SQLALCHEMY_DATABASE_URI"] = (
@@ -41,12 +50,15 @@ async def create_app():
         register_listeners(bolt_app, bot_name)
 
     # Start the Socket Mode handlers for each bot
-    for _, (_, handler) in bolt_apps.items():
-        await handler.start_async()
+    # for bot_name, (_, handler) in bolt_apps.items():
+    #     logger.info(f"Starting handler for {bot_name}")
+    #     await handler.start_async()
+    #     logger.info(f"Handler started for {bot_name}")
 
-    # Set up logging
-    setup_logging()
-    logger = get_logger(__name__)
+    handlers = [handler.start_async() for _, (_, handler) in bolt_apps.items()]
+    await asyncio.gather(*handlers)
+    logger.info("All handlers started")
+
     logger.info("Application startup")
 
     return flask_app, bolt_apps

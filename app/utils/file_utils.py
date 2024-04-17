@@ -43,6 +43,17 @@ async def image_bytes_to_base64(image_bytes: bytes) -> str:
         )
 
 
+async def base64_to_image_bytes(base64_string: str) -> bytes:
+    try:
+        image_bytes = base64.b64decode(base64_string)
+        return image_bytes
+    except Exception as e:
+        logger.error(f"Error converting base64 to image bytes: {e}")
+        raise ImageProcessingError(
+            "We encountered an issue while processing your base64 string. Please ensure it is correctly formatted and try again."
+        )
+
+
 async def convert_audio_to_mp3(file_type, file_bytes):
     if not isinstance(file_bytes, bytes):
         raise TypeError("file_bytes must be of type bytes")

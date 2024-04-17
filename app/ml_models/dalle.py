@@ -6,8 +6,7 @@ from app.exceptions import DALLEProcessingError
 
 
 class DALLE(ModelWrapper):
-    async def call_model(self, input_data):
-        prompt = input_data
+    async def call_model(self, prompt):
         try:
             if len(prompt) > 4000:  # Assuming dall-e-3 usage
                 error_message = "Prompt length exceeds the maximum allowed characters (4000 for dall-e-3)"
@@ -41,7 +40,7 @@ class DALLE(ModelWrapper):
             error_type = type(e).__name__.replace("Error", "")
             error_message = f"{error_type} error: {e}"
             logger.error(error_message)
-            raise (f"An error occurred: {error_message}")
+            raise DALLEProcessingError(f"An error occurred: {error_message}")
 
         except DALLEProcessingError:
             raise
