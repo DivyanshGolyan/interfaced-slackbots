@@ -128,10 +128,12 @@ class TransformedSlackConversation:
 
 
 class AgentResponse:
-    def __init__(self, text=None):
+    def __init__(self, text=None, is_stream=False, end_of_stream=False):
         self.text = text if text else ""
         self.files = []
         self.metadata = {}
+        self.is_stream = is_stream
+        self.end_of_stream = end_of_stream
 
     def add_text(self, text):
         self.text += text
@@ -162,3 +164,138 @@ class AgentResponseFile:
                 )
         self.file_bytes = file_bytes
         self.title = title
+
+
+class SlackTextMessage:
+
+    def __init__(self, client, channel, thread_ts, text):
+        self.client = client
+        self.channel = channel
+        self.thread_ts = thread_ts
+        self.text = text
+        self.ts = None  # Timestamp of the message once sent
+
+    @classmethod
+    async def create_and_send(cls, client, channel, thread_ts, text, typing_indicator):
+        instance = cls(client, channel, thread_ts, text)
+        await instance.send(typing_indicator)
+        return instance
+
+    async def send(self, typing_indicator):
+        response = await self.client.chat_postMessage(
+            text=self.text + typing_indicator,
+            channel=self.channel,
+            thread_ts=self.thread_ts,
+        )
+        self.ts = response.get("ts")
+
+    async def update_and_post(self, new_text, typing_indicator):
+        self.text += new_text
+
+        await self.client.chat_update(
+            text=self.text + typing_indicator, channel=self.channel, ts=self.ts
+        )
+
+
+class SlackFileMessage:
+
+    def __init__(self, client, channel, thread_ts, text, files):
+        self.client = client
+        self.channel = channel
+        self.thread_ts = thread_ts
+        self.initial_comment = text if text else None
+        self.file_uploads = []
+        for file in files:
+            self.file_uploads.append(
+                {
+                    "content": file.file_bytes,
+                    "title": (file.title if file.title else None),
+                }
+            )
+        self.ts = None
+
+    @classmethod
+    async def create_and_send(cls, client, channel, thread_ts, text, files):
+        instance = cls(client, channel, thread_ts, text, files)
+        await instance.send()
+        return instance
+
+    async def send(self):
+        await self.client.files_upload_v2(
+            file_uploads=self.file_uploads,
+            channel=self.channel,
+            initial_comment=self.initial_comment,
+            thread_ts=self.thread_ts,
+        )
+
+
+class SlackResponseHandler:
+    def __init__(self, client, channel_id, thread_ts):
+        self.client = client
+        self.channel = channel_id
+        self.thread_ts = thread_ts
+        self.messages = []
+        self.typing_indicator = "\n\n:typing-bubble:"
+
+    async def handle_responses(self, response_generator):
+        async for agent_response in response_generator:
+            if agent_response.end_of_stream:
+                typing_indicator_text = ""
+            else:
+                typing_indicator_text = self.typing_indicator
+
+            if agent_response.files:
+                message = await SlackFileMessage.create_and_send(
+                    client=self.client,
+                    channel=self.channel,
+                    thread_ts=self.thread_ts,
+                    text=agent_response.text,
+                    files=agent_response.files,
+                )
+            elif not agent_response.is_stream:
+                message = await SlackTextMessage.create_and_send(
+                    client=self.client,
+                    channel=self.channel,
+                    thread_ts=self.thread_ts,
+                    text=agent_response.text,
+                    typing_indicator="",
+                )
+            elif not self.messages:
+                message = await SlackTextMessage.create_and_send(
+                    client=self.client,
+                    channel=self.channel,
+                    thread_ts=self.thread_ts,
+                    text=agent_response.text,
+                    typing_indicator=typing_indicator_text,
+                )
+            else:
+                latest_text_message = None
+                for message in reversed(self.messages):
+                    if isinstance(message, SlackTextMessage):
+                        latest_text_message = message
+                        break
+                new_accumulated_text = (
+                    latest_text_message.text
+                    + agent_response.text
+                    + typing_indicator_text
+                )
+                if len(new_accumulated_text) > 3900:
+                    await latest_text_message.update_and_post(
+                        new_text="", typing_indicator=""
+                    )
+                    message = await SlackTextMessage.create_and_send(
+                        client=self.client,
+                        channel=self.channel,
+                        thread_ts=self.thread_ts,
+                        text=agent_response.text,
+                        typing_indicator=typing_indicator_text,
+                    )
+                else:
+                    await latest_text_message.update_and_post(
+                        new_text=agent_response.text,
+                        typing_indicator=typing_indicator_text,
+                    )
+
+            self.messages.append(message)
+
+        self.messages.clear()

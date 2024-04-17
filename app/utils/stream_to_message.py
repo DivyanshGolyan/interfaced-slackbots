@@ -22,10 +22,16 @@ async def handle_stream(end_model, payload, stream):
 
             # Yield the complete sentence, check if it's not just whitespace
             if sentence.strip():
-                yield AgentResponse(sentence)
+                yield AgentResponse(
+                    text=sentence, is_stream=stream, end_of_stream=False
+                )
 
     # After the stream ends, check if there's any remaining text in the buffer
     if text_buffer.strip():
         yield AgentResponse(
-            text_buffer
+            text=text_buffer, is_stream=stream, end_of_stream=True
         )  # Yield any remaining incomplete sentence with original whitespace
+    else:
+        yield AgentResponse(
+            is_stream=stream, end_of_stream=True
+        )  # Yield a final response indicating the end of the stream with no additional text

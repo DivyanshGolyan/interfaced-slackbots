@@ -13,12 +13,11 @@ SLACK_BOTS = {
         "app_token": os.environ.get("CHATGPT_SLACK_APP_TOKEN"),
         "agent": "app.agents.chatgpt.ChatGPT",
     },
-    # "imagegen": {
-    #     "bot_token": os.environ.get("SLACK_BOT_TOKEN_2"),
-    #     "app_token": os.environ.get("SLACK_APP_TOKEN_2"),
-    #     "agent": "app.agents.imagegen.ImageGen",
-    # },
-    # ...
+    "dalle": {
+        "bot_token": os.environ.get("DALLE_SLACK_BOT_TOKEN"),
+        "app_token": os.environ.get("DALLE_SLACK_APP_TOKEN"),
+        "agent": "app.agents.dalle.DALLE",
+    },
 }
 
 # LLM API credentials

@@ -1,0 +1,13 @@
+# On api.slack.com 
+1. Create bot from an app manifest on slack
+2. generate app token
+3. get bot token
+4. tick checkbox to allow users to message bot
+
+# In Code
+– add the app and bot tokens in the .env file
+– if required, add the llm client api key in the .env file
+– add the bot to the SLACK_BOTS dictionary
+– if required, create a new llm client
+– create a new ml model
+– 
