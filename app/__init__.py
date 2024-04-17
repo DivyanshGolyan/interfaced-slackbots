@@ -59,6 +59,8 @@ async def create_app():
     await asyncio.gather(*handlers)
     logger.info("All handlers started")
 
+    # print(f"Anthropic Key {os.environ.get("ANTHROPIC_API_KEY")}")
+
     logger.info("Application startup")
 
     return flask_app, bolt_apps

@@ -8,11 +8,23 @@ from app.exceptions import *
 from typing import *
 
 
-async def pdf_to_images(pdf_bytes: bytes) -> Tuple[str, List[bytes]]:
+async def pdf_to_images(
+    pdf_bytes: bytes, max_width: int = 1024, max_height: int = 1024
+) -> Tuple[str, List[bytes]]:
     try:
+        # Convert PDF to images without specifying size to get the original dimensions
         images = convert_from_bytes(pdf_bytes)
         images_bytes = []
         for image in images:
+            # Calculate the proportional size
+            original_width, original_height = image.size
+            ratio = min(max_width / original_width, max_height / original_height)
+            new_width = int(original_width * ratio)
+            new_height = int(original_height * ratio)
+
+            # Resize image to new dimensions
+            image = image.resize((new_width, new_height), Image.ANTIALIAS)
+
             if image.size[0] * image.size[1] > Image.MAX_IMAGE_PIXELS:
                 logger.error("Image size exceeds the default PIL pixel limit.")
                 raise PDFToImageConversionError(

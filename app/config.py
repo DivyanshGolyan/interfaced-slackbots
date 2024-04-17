@@ -18,6 +18,11 @@ SLACK_BOTS = {
         "app_token": os.environ.get("CHATGPT_SLACK_APP_TOKEN"),
         "agent": "app.agents.chatgpt.ChatGPT",
     },
+    "claude": {
+        "bot_token": os.environ.get("CLAUDE_SLACK_BOT_TOKEN"),
+        "app_token": os.environ.get("CLAUDE_SLACK_APP_TOKEN"),
+        "agent": "app.agents.claude.Claude",
+    },
 }
 
 
@@ -60,6 +65,7 @@ MAX_SLACK_FILE_SIZE = int(os.environ.get("MAX_SLACK_FILE_SIZE"))
 GPT_MODEL = os.environ.get("GPT_MODEL")
 DALLE_MODEL = os.environ.get("DALLE_MODEL")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL")
+CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL")
 WHISPER_CHUNK_LIMIT = 20 * 1024 * 1024
 
 file_type_to_mime_type = {
