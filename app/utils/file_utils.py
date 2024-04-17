@@ -23,7 +23,7 @@ async def pdf_to_images(
             new_height = int(original_height * ratio)
 
             # Resize image to new dimensions
-            image = image.resize((new_width, new_height), Image.ANTIALIAS)
+            image = image.resize((new_width, new_height))
 
             if image.size[0] * image.size[1] > Image.MAX_IMAGE_PIXELS:
                 logger.error("Image size exceeds the default PIL pixel limit.")
