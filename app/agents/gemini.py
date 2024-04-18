@@ -1,41 +1,48 @@
 from app.agents.agent_manager import Agent
-from app.ml_models.gpt import GPT
-from app.ml_models.whisper import Whisper
+from app.ml_models.gemini import Gemini as gemini_model
 from app.utils.file_utils import *
 from app.objects import *
 from contextlib import closing
 import pypdf
 import pypdf.errors
 from app.config import *
-from app.adapters.gpt_adapter import GPTAdapter
+from app.adapters.gemini_adapter import GeminiAdapter
 import asyncio
 from app.exceptions import *
 from app.utils.stream_to_message import *
 
 
-class ChatGPT(Agent):
+class Gemini(Agent):
     def __init__(self):
         self.supported_mime_categories = [
             "text/",
             "image/",
             "application/pdf",
             "audio/",
+            "video/",
         ]
         self.supported_image_types = [
             "png",
             "jpeg",
             "jpg",
             "webp",
-            "gif",
+            "heic",
+            "heif",
         ]
         self.supported_audio_types = [
             "mp3",
             "wav",
-            "webm",
+            "aiff",
+            "aac",
+            "ogg",
+            "flac",
         ]
-        self.transcription_model = Whisper()
-        self.model_adapter = GPTAdapter()
-        self.end_model = GPT()
+        self.supported_video_types = [
+            "mp4",
+            "mov",
+        ]
+        self.model_adapter = GeminiAdapter()
+        self.end_model = gemini_model()
 
     async def process_conversation(self, conversation, system_prompt=None, stream=True):
         if not isinstance(conversation, slack_conversation):
@@ -51,7 +58,7 @@ class ChatGPT(Agent):
             transformed_conversation.add_message(transformed_message)
 
         payload = await self.model_adapter.convert_conversation(
-            transformed_conversation, system_prompt
+            transformed_conversation
         )
 
         # Call the external stream handling function and yield from it
@@ -107,10 +114,12 @@ class ChatGPT(Agent):
             elif mime_type.startswith("audio/"):
                 await self.process_audio(file_type, file_bytes, transformed_message)
 
+            elif mime_type.startswith("video/"):
+                await self.process_video(file_type, file_bytes, transformed_message)
+
     async def process_pdf(self, file_bytes, transformed_message):
         try:
             pdf_reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            # file_bytes.seek(0)
             file_type, images_bytes = await pdf_to_images(file_bytes)
             for image in images_bytes:
                 transformed_message.add_file(ProcessedFile(file_type, image))
@@ -136,11 +145,9 @@ class ChatGPT(Agent):
 
     async def process_image(self, file_type, file_bytes, transformed_message):
         if file_type not in self.supported_image_types:
-            # file_bytes.seek(0)
             converted_file_type, converted_file_bytes = await convert_image_to_png(
                 file_type, file_bytes
             )
-            # file_bytes.seek(0)
             transformed_message.add_file(
                 ProcessedFile(converted_file_type, converted_file_bytes)
             )
@@ -148,7 +155,6 @@ class ChatGPT(Agent):
             transformed_message.add_file(ProcessedFile(file_type, file_bytes))
 
     async def process_audio(self, file_type, file_bytes, transformed_message):
-        # file_bytes.seek(0)
         if file_type not in self.supported_audio_types:
             try:
                 converted_file_type, converted_file_bytes = await convert_audio_to_mp3(
@@ -160,15 +166,23 @@ class ChatGPT(Agent):
                 raise AudioProcessingError(
                     f"Failed to convert the audio file to MP3 format, which is supported. Please ensure your file is in a compatible format and try again. Supported formats include: {supported_formats}."
                 )
-            # converted_file_bytes.seek(0)
-            transcribed_text = await self.transcription_model.call_model(
-                converted_file_type, converted_file_bytes
+            transformed_message.add_file(
+                ProcessedFile(converted_file_type, converted_file_bytes)
             )
         else:
-            transcribed_text = await self.transcription_model.call_model(
-                file_type, file_bytes
+            transformed_message.add_file(ProcessedFile(file_type, file_bytes))
+
+    async def process_video(self, file_type, file_bytes, transformed_message):
+        if file_type not in self.supported_video_types:
+            supported_formats = ", ".join(self.supported_video_types)
+            raise VideoProcessingError(
+                f"Unsupported video format. Supported formats include: {supported_formats}."
             )
 
-        transformed_message.add_text(
-            f"Transcription from audio file:\n{transcribed_text}\n"
-        )
+        frames = await extract_frames_from_video_bytes(file_bytes, file_type)
+        for frame_bytes, timestamp, format in frames:
+            transformed_message.add_file(
+                ProcessedFile(
+                    file_type=format, file_bytes=frame_bytes, description=timestamp
+                )
+            )

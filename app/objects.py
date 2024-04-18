@@ -92,11 +92,12 @@ class slack_conversation:
 
 
 class ProcessedFile:
-    def __init__(self, file_type, file_bytes):
+    def __init__(self, file_type, file_bytes, description=None):
         if not isinstance(file_bytes, bytes):
             raise ValueError("file_bytes must be an instance of bytes")
         self.file_type = file_type
         self.file_bytes = file_bytes
+        self.description = description
 
 
 class TransformedSlackMessage:

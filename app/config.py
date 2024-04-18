@@ -28,6 +28,11 @@ SLACK_BOTS = {
         "app_token": os.environ.get("STABLE_DIFF_SLACK_APP_TOKEN"),
         "agent": "app.agents.stable_diffusion.StableDiffusion",
     },
+    "gemini": {
+        "bot_token": os.environ.get("GEMINI_SLACK_BOT_TOKEN"),
+        "app_token": os.environ.get("GEMINI_SLACK_APP_TOKEN"),
+        "agent": "app.agents.gemini.Gemini",
+    },
 }
 
 
@@ -72,7 +77,9 @@ GPT_MODEL = os.environ.get("GPT_MODEL")
 DALLE_MODEL = os.environ.get("DALLE_MODEL")
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL")
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL")
 WHISPER_CHUNK_LIMIT = 20 * 1024 * 1024
+VIDEO_PROCESSING_DURATION_LIMIT = 60
 
 file_type_to_mime_type = {
     "123": "application/vnd.lotus-1-2-3",

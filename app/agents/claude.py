@@ -95,8 +95,7 @@ class Claude(Agent):
                 raise TypeError("file_bytes is not a bytes object")
 
             if mime_type.startswith("text/") or mode in ["snippet", "post"]:
-                with closing(file_bytes):
-                    extracted_text = file_bytes.getvalue().decode("utf-8")
+                extracted_text = file_bytes.decode("utf-8")
                 transformed_message.add_text(f"From {file_name}: \n{extracted_text}\n")
 
             elif mime_type == "application/pdf":

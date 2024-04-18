@@ -6,6 +6,13 @@ from pydub import AudioSegment
 from PIL import Image
 from app.exceptions import *
 from typing import *
+import hashlib
+from app.LLM_clients.google_client import genai as google_client
+import cv2
+import io
+from typing import List, Tuple
+import tempfile
+import pathlib
 
 
 async def pdf_to_images(
@@ -120,3 +127,98 @@ def get_mime_type_from_url(file_type, media_display_type):
         return mime_type_entry.get(media_display_type)
     else:
         return mime_type_entry
+
+
+async def google_upload(file_bytes: bytes, file_type: str) -> str:
+    # hash_id = hashlib.sha256(file_bytes).hexdigest()
+    try:
+        # existing_file = google_client.get_file(name=hash_id)
+        # if existing_file:
+        #     return existing_file.uri
+
+        # Create a temporary file to save the bytes with the file_type as the suffix
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=f".{file_type}"
+        ) as tmp_file:
+            tmp_file.write(file_bytes)
+            tmp_file_path = pathlib.Path(tmp_file.name)
+
+        # Now pass the file path to upload_file
+        uploaded_file = google_client.upload_file(path=tmp_file_path)
+
+        # Optionally, clean up the temporary file after uploading
+        tmp_file_path.unlink()
+
+        return uploaded_file.uri
+    except Exception as e:
+        logger.error(f"Error handling file in Google Cloud: {e}")
+        raise GeminiError(e)
+
+
+async def extract_frames_from_video_bytes(
+    video_bytes: bytes,
+    file_type: str,
+    frames_per_second: int = 1,
+    image_format: str = ".jpg",
+) -> List[Tuple[bytes, str, str]]:
+    try:
+        # Create a temporary file to write video bytes
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=f".{file_type}"
+        ) as temp_video_file:
+            temp_video_file.write(video_bytes)
+            temp_video_file_name = temp_video_file.name
+
+        # Initialize video capture from the temporary file
+        vidcap = cv2.VideoCapture(temp_video_file_name)
+        fps = vidcap.get(cv2.CAP_PROP_FPS)  # Frames per second in the video
+        duration = vidcap.get(cv2.CAP_PROP_FRAME_COUNT) / fps
+
+        max_duration = (
+            VIDEO_PROCESSING_DURATION_LIMIT  # Maximum allowed duration in seconds
+        )
+
+        if duration > max_duration:
+            raise VideoProcessingError(
+                f"Your video is {duration:.2f} seconds long, which exceeds the maximum allowed duration of {max_duration} seconds. Please upload a shorter video."
+            )
+
+        frames_data = []
+        count = 0
+
+        # Calculate frame extraction rate
+        frame_extraction_rate = (
+            int(fps / frames_per_second) if fps >= frames_per_second else 1
+        )
+
+        while vidcap.isOpened():
+            success, frame = vidcap.read()
+            if not success:  # End of video
+                break
+            if (
+                count % frame_extraction_rate == 0
+            ):  # Extract frames based on the calculated rate
+                # Encode frame to specified image format
+                success, encoded_image = cv2.imencode(
+                    image_format, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+                )
+                if success:
+                    # Convert the encoded image to bytes
+                    image_bytes = encoded_image.tobytes()
+
+                    # Calculate timestamp
+                    seconds = count / fps
+                    timestamp = f"{int(seconds // 3600):02d}:{int((seconds % 3600) // 60):02d}:{int(seconds % 60):02d}"
+
+                    # Append image bytes, timestamp, and image format (without the dot)
+                    frames_data.append(
+                        (image_bytes, timestamp, image_format.strip("."))
+                    )
+            count += 1
+
+        vidcap.release()  # Release the capture object
+        os.unlink(temp_video_file_name)  # Clean up the temporary file
+        return frames_data
+    except Exception as e:
+        logger.error(f"Error extracting frames from video bytes: {e}")
+        raise e

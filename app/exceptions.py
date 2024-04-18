@@ -6,7 +6,14 @@ class UserFacingError(Exception):
         self.message = message
 
 
-class PDFProcessingError(UserFacingError):
+class FileProcessingError(UserFacingError):
+    """Raised when there is a general file processing issue."""
+
+    def __init__(self, message=None):
+        super().__init__(message)
+
+
+class PDFProcessingError(FileProcessingError):
     """Raised when there is an issue with PDF processing."""
 
     def __init__(self, message=None):
@@ -34,15 +41,22 @@ class DataNotFoundError(UserFacingError):
         super().__init__(message)
 
 
-class ImageProcessingError(UserFacingError):
+class ImageProcessingError(FileProcessingError):
     """Raised when there is an issue with image processing."""
 
     def __init__(self, message=None):
         super().__init__(message)
 
 
-class AudioProcessingError(UserFacingError):
+class AudioProcessingError(FileProcessingError):
     """Raised when there is an issue with audio processing."""
+
+    def __init__(self, message=None):
+        super().__init__(message)
+
+
+class VideoProcessingError(FileProcessingError):
+    """Raised when there is an issue with video processing."""
 
     def __init__(self, message=None):
         super().__init__(message)
