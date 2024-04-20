@@ -15,10 +15,51 @@ class Gemini(ModelWrapper):
                     contents=input_data, stream=True
                 )
                 async for chunk in response:
-                    yield chunk.text  # Yield each chunk as it arrives
+                    # print(f"Gemini response chunk: {chunk}")
+                    if hasattr(chunk, "text"):
+                        yield chunk.text  # Yield each chunk as it arrives
+                    else:
+                        logger.error("Response chunk does not contain 'text'.")
+                        raise GPTProcessingError("(No response received from the LLM.)")
+                # async for chunk in response:
+                #     print(f"Gemini response chunk: {chunk}")
+                #     if hasattr(chunk, "candidates") and chunk.candidates:
+                #         candidate = chunk.candidates[0]
+                #         print(f"Gemini response candidate: {candidate}")
+                #         if (
+                #             hasattr(candidate, "content")
+                #             and hasattr(candidate.content, "parts")
+                #             and candidate.content.parts
+                #         ):
+                #             part = candidate.content.parts[0]
+                #             print(f"Gemini response part: {part}")
+                #             if hasattr(part, "text"):
+                #                 text = part.text
+                #                 # token_count = candidate.token_count
+                #                 yield text  # Yield text if it is available
+                #             else:
+                #                 logger.error("Part does not contain 'text'.")
+                #                 raise GPTProcessingError(
+                #                     "No text available in the response part."
+                #                 )
+                #         else:
+                #             logger.error("Candidate does not contain 'parts'.")
+                #             raise GPTProcessingError(
+                #                 "No parts available in the response candidate."
+                #             )
+                #     else:
+                #         logger.error("Response chunk does not contain 'candidates'.")
+                #         raise GPTProcessingError(
+                #             "No candidates available in the response chunk."
+                #         )
+
             else:
                 response = await model.generate_content_async(contents=input_data)
-                yield response.text  # Return the complete message content
+                if hasattr(response, "text"):
+                    yield response.text  # Yield each chunk as it arrives
+                else:
+                    logger.error("Response does not contain 'text'.")
+                    raise GPTProcessingError("(No response received from the LLM.)")
 
             # Extract file URIs from input data and delete files
             file_uris = [

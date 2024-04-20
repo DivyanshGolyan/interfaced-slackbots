@@ -37,7 +37,7 @@ class Claude(Agent):
         self.model_adapter = ClaudeAdapter()
         self.end_model = Claude_model()
 
-    async def process_conversation(self, conversation):
+    async def process_conversation(self, conversation, system_prompt=None, stream=True):
         if not isinstance(conversation, slack_conversation):
             raise TypeError("conversation is not a slack_conversation object")
 
@@ -51,12 +51,17 @@ class Claude(Agent):
             transformed_conversation.add_message(transformed_message)
 
         payload = await self.model_adapter.convert_conversation(
-            transformed_conversation
+            transformed_conversation, system_prompt
         )
 
-        # Call the external stream handling function and yield from it
-        async for response in handle_stream(self.end_model, payload, stream=True):
-            yield response
+        if stream:
+            # Call the external stream handling function and yield from it
+            async for response in handle_stream(self.end_model, payload, stream=stream):
+                yield response
+        else:
+            # Call the model directly and yield the response as an agent response
+            async for response in self.end_model.call_model(payload, stream=False):
+                yield AgentResponse(text=response, is_stream=False, end_of_stream=True)
 
     async def process_message(self, message):
         if not isinstance(message, slack_message):
@@ -110,7 +115,11 @@ class Claude(Agent):
     async def process_pdf(self, file_bytes, transformed_message):
         try:
             pdf_reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            # file_bytes.seek(0)
+            if len(pdf_reader.pages) > PDF_PAGE_LIMIT:
+                raise PDFProcessingError(
+                    f"Your PDF has {len(pdf_reader.pages)} pages, which exceeds the {PDF_PAGE_LIMIT}-page limit."
+                )
+            del pdf_reader
             file_type, images_bytes = await pdf_to_images(file_bytes)
             for image in images_bytes:
                 transformed_message.add_file(ProcessedFile(file_type, image))

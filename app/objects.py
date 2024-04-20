@@ -1,7 +1,8 @@
 import aiohttp
 import io
-from app.config import MAX_SLACK_FILE_SIZE
+from app.config import *
 from app.utils.file_utils import get_mime_type_from_url
+import time
 
 
 class slack_file:
@@ -179,6 +180,7 @@ class SlackTextMessage:
         self.thread_ts = thread_ts
         self.text = text
         self.ts = None  # Timestamp of the message once sent
+        self.last_update_time = None
 
     @classmethod
     async def create_and_send(cls, client, channel, thread_ts, text, typing_indicator):
@@ -193,13 +195,22 @@ class SlackTextMessage:
             thread_ts=self.thread_ts,
         )
         self.ts = response.get("ts")
+        self.last_update_time = time.time()
 
     async def update_and_post(self, new_text, typing_indicator):
         self.text += new_text
-
-        await self.client.chat_update(
-            text=self.text + typing_indicator, channel=self.channel, ts=self.ts
-        )
+        if not new_text:
+            await self.client.chat_update(
+                text=self.text + typing_indicator, channel=self.channel, ts=self.ts
+            )
+        else:
+            current_time = time.time()
+            if current_time - self.last_update_time < SLACK_MESSAGE_UPDATE_INTERVAL:
+                return
+            await self.client.chat_update(
+                text=self.text + typing_indicator, channel=self.channel, ts=self.ts
+            )
+            self.last_update_time = current_time
 
 
 class SlackFileMessage:

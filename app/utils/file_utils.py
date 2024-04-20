@@ -13,6 +13,11 @@ import io
 from typing import List, Tuple
 import tempfile
 import pathlib
+import aiofiles
+import asyncio
+import aiohttp
+import uuid
+import json
 
 
 async def pdf_to_images(
@@ -130,27 +135,134 @@ def get_mime_type_from_url(file_type, media_display_type):
 
 
 async def google_upload(file_bytes: bytes, file_type: str) -> str:
-    # hash_id = hashlib.sha256(file_bytes).hexdigest()
     try:
-        # existing_file = google_client.get_file(name=hash_id)
-        # if existing_file:
-        #     return existing_file.uri
-
         # Create a temporary file to save the bytes with the file_type as the suffix
-        with tempfile.NamedTemporaryFile(
+        async with aiofiles.tempfile.NamedTemporaryFile(
             delete=False, suffix=f".{file_type}"
         ) as tmp_file:
-            tmp_file.write(file_bytes)
+            await tmp_file.write(file_bytes)
             tmp_file_path = pathlib.Path(tmp_file.name)
 
-        # Now pass the file path to upload_file
         uploaded_file = google_client.upload_file(path=tmp_file_path)
 
-        # Optionally, clean up the temporary file after uploading
+        # Clean up the temporary file after uploading
         tmp_file_path.unlink()
 
         return uploaded_file.uri
     except Exception as e:
+        logger.error(f"Error handling file in Google Cloud: {e}")
+        raise GeminiError(e)
+
+
+# async def google_upload_http(file_bytes: bytes, file_type: str) -> str:
+
+#     url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+#     headers = {
+#         "Authorization": f"Bearer {GOOGLE_API_KEY}",
+#         "Content-Type": "application/octet-stream",
+#     }
+#     random_file_name = f"{uuid.uuid4()}.{file_type}"
+#     params = {"uploadType": "media", "name": random_file_name}
+
+#     async with aiohttp.ClientSession() as session:
+#         async with session.post(
+#             url, headers=headers, params=params, data=file_bytes
+#         ) as response:
+#             if response.status == 200:
+#                 data = await response.json()
+#                 return data["uri"]
+#             else:
+#                 response_text = await response.text()
+#                 raise Exception(
+#                     f"Failed to upload file: {response.status} {response_text}"
+#                 )
+
+
+async def google_upload_http(
+    file_bytes: bytes, file_type: str, file_name: str = None
+) -> str:
+    url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+    headers = {
+        "Authorization": f"Bearer {GOOGLE_API_KEY}",
+    }
+
+    # Prepare file metadata
+    file_metadata = {}
+    if file_name:
+        file_metadata["name"] = file_name
+
+    # Create multipart form data
+    data = aiohttp.FormData()
+    data.add_field("file", json.dumps(file_metadata), content_type="application/json")
+    data.add_field(
+        "media",
+        file_bytes,
+        filename=f"{uuid.uuid4()}.{file_type}",
+        content_type="application/octet-stream",  # Adjust MIME type if known
+    )
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, data=data) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data["uri"]
+            else:
+                response_text = await response.text()
+                logger.error(response)
+                raise Exception(f"Failed to upload file: {response}")
+
+
+async def google_upload_async_http(file_bytes: bytes, file_type: str) -> str:
+    """Uploads file bytes asynchronously using aiohttp and a temporary file.
+
+    Args:
+        file_bytes (bytes): The file content as bytes.
+        file_type (str): The file type (e.g., "txt", "png").
+        api_key (str): Your Google Cloud API key.
+
+    Returns:
+        str: The URI of the uploaded file.
+    """
+    try:
+        async with aiofiles.tempfile.NamedTemporaryFile(
+            delete=False, suffix=f".{file_type}"
+        ) as tmp_file:
+            await tmp_file.write(file_bytes)
+            tmp_file_path = pathlib.Path(tmp_file.name)
+
+        url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+        headers = {
+            "Authorization": f"Bearer {GOOGLE_API_KEY}",
+            "Content-Type": "multipart/related",
+        }
+
+        # Create multipart form data with mimeType
+        data = aiohttp.FormData()
+        mime_type = file_type_to_mime_type.get(file_type)
+        data.add_field(
+            "file",
+            json.dumps({"mimeType": mime_type}),
+            content_type="application/json",
+        )
+        data.add_field(
+            "media",
+            open(tmp_file_path, "rb"),
+            filename=tmp_file_path.name,
+            content_type=mime_type,
+        )
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, data=data) as response:
+                response_data = await response.json()
+                uri = response_data["file"]["uri"]
+
+        # Clean up the temporary file
+        tmp_file_path.unlink()
+
+        return uri
+
+    except Exception as e:
+        # Handle exceptions and logging as needed
         logger.error(f"Error handling file in Google Cloud: {e}")
         raise GeminiError(e)
 

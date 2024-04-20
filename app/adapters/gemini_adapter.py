@@ -2,7 +2,7 @@ from app.adapters.base_adapter import LLMAdapter
 from app.config import file_type_to_mime_type
 import asyncio
 from app.exceptions import *
-from app.utils.file_utils import google_upload
+from app.utils.file_utils import *
 
 
 class GeminiAdapter(LLMAdapter):
@@ -22,9 +22,8 @@ class GeminiAdapter(LLMAdapter):
         parts = []
         if message.text:
             parts.append({"text": message.text})
-        file_tasks = [self.process_file(file) for file in message.files]
-        file_parts_lists = await asyncio.gather(*file_tasks)
-        for file_parts in file_parts_lists:
+        for file in message.files:
+            file_parts = await self.process_file(file)
             parts.extend(file_parts)
         return parts
 
@@ -37,12 +36,20 @@ class GeminiAdapter(LLMAdapter):
             if mime_type is None:
                 raise ValueError(f"MIME type not found for file type: {file_type}")
             try:
-                file_uri = await google_upload(file.file_bytes, file_type)
-                file_data = {"mime_type": mime_type, "file_uri": file_uri}
                 result = []
-                if file.description:
-                    result.append({"text": file.description})
-                result.append({"file_data": file_data})
+                if file_type in supported_image_types:
+                    # Use inline_data for images
+                    blob = {"mime_type": mime_type, "data": file.file_bytes}
+                    if file.description:
+                        result.append({"text": file.description})
+                    result.append({"inline_data": blob})
+                else:
+                    # Use file_data for audio files
+                    file_uri = await google_upload(file.file_bytes, file_type)
+                    file_data = {"mime_type": mime_type, "file_uri": file_uri}
+                    if file.description:
+                        result.append({"text": file.description})
+                    result.append({"file_data": file_data})
                 return result
             except Exception as e:
                 raise FileProcessingError(f"Failed to process file: {str(e)}")

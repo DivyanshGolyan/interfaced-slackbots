@@ -8,14 +8,15 @@ from app.agents.agent_manager import AgentManager
 agent_manager = AgentManager(SLACK_BOTS)
 
 
-async def process_message(event, bot_name, slack_client, channel_id, thread_ts):
+async def process_message(
+    event, bot_name, slack_client, channel_id, thread_ts, bot_user_id
+):
     bot_token = SLACK_BOTS.get(bot_name, {}).get("bot_token", "")
     agent = SLACK_BOTS.get(bot_name, {}).get("agent", "")
     event_type = event.get("type")
     user_message_ts = event.get("ts")
     if event_type == "app_mention":
         thread_ts = thread_ts or user_message_ts
-    bot_user_id = await get_bot_user_id(slack_client)
 
     thread_messages = await fetch_thread_messages(
         slack_client, channel_id, thread_ts, bot_token, bot_user_id
@@ -165,15 +166,6 @@ async def fetch_thread_messages(client, channel_id, thread_ts, bot_token, bot_us
 #     return None  # Return None if no suitable bot message is found
 
 
-async def get_bot_user_id(client):
-    try:
-        response = await client.auth_test()
-        if response["ok"]:
-            return response.get("user_id")
-    except Exception as e:
-        return None, str(e)
-
-
 @asynccontextmanager
 async def handle_errors(client, channel_id, thread_ts):
     try:
@@ -221,3 +213,4 @@ async def handle_errors(client, channel_id, thread_ts):
 #     await client.chat_update(
 #         channel=channel_id, ts=bot_message_ts, text=agent_response.text
 #     )
+

@@ -80,6 +80,9 @@ CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL")
 WHISPER_CHUNK_LIMIT = 20 * 1024 * 1024
 VIDEO_PROCESSING_DURATION_LIMIT = 60
+PDF_PAGE_LIMIT = 60
+SLACK_MESSAGE_UPDATE_INTERVAL = 2
+LIST_OF_ALLOWED_CHANNELS = os.environ.get("LIST_OF_ALLOWED_CHANNELS", "").split(",")
 
 file_type_to_mime_type = {
     "123": "application/vnd.lotus-1-2-3",
