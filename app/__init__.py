@@ -48,16 +48,20 @@ async def initialize_bolt_apps(slack_bots):
 
 async def register_and_cleanup_bolt_apps(bolt_apps):
     for bot_name, bot_info in bolt_apps.items():
+        bolt_app = bot_info.get("bolt_app")
+        bolt_client = bot_info.get("client")
+        bot_user_id = bot_info.get("bot_user_id")
         register_listeners(
-            bot_info.get("bolt_app"),
+            bolt_app,
             bot_name,
-            bot_info.get("client"),
-            bot_info.get("bot_user_id"),
+            bolt_client,
+            bot_user_id,
         )
-        await leave_unallowed_channels(bot_info.get("client"), bot_name)
+        await leave_unallowed_channels(bolt_client, bot_name)
+        await send_wake_up_message(bolt_client)
 
 
-async def start_bolt_handlers(bolt_apps, logger):
+async def start_bolt_handlers(bolt_apps):
     handlers = [
         bot_info.get("handler").start_async() for bot_info in bolt_apps.values()
     ]
@@ -91,3 +95,9 @@ async def leave_unallowed_channels(client, bot_name):
         cursor = response.get("response_metadata", {}).get("next_cursor")
         if not cursor:
             break
+
+
+async def send_wake_up_message(client):
+    await client.chat_postMessage(
+        channel=MAINTAINER_SLACK_USER_ID, text="I've just been restarted."
+    )

@@ -6,7 +6,8 @@ from pydub import AudioSegment
 from PIL import Image
 from app.exceptions import *
 from typing import *
-import hashlib
+
+# import hashlib
 from app.LLM_clients.google_client import genai as google_client
 import cv2
 import io
@@ -14,45 +15,63 @@ from typing import List, Tuple
 import tempfile
 import pathlib
 import aiofiles
-import asyncio
-import aiohttp
-import uuid
-import json
+
+# import asyncio
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+
+# import aiohttp
+# import uuid
+# import json
+import traceback
 
 
 async def pdf_to_images(
     pdf_bytes: bytes, max_width: int = 1024, max_height: int = 1024
 ) -> Tuple[str, List[bytes]]:
     try:
-        # Convert PDF to images without specifying size to get the original dimensions
-        images = convert_from_bytes(pdf_bytes)
-        images_bytes = []
-        for image in images:
-            # Calculate the proportional size
-            original_width, original_height = image.size
-            ratio = min(max_width / original_width, max_height / original_height)
-            new_width = int(original_width * ratio)
-            new_height = int(original_height * ratio)
-
-            # Resize image to new dimensions
-            image = image.resize((new_width, new_height))
-
-            if image.size[0] * image.size[1] > Image.MAX_IMAGE_PIXELS:
-                logger.error("Image size exceeds the default PIL pixel limit.")
-                raise PDFToImageConversionError(
-                    "Image size exceeds the default safe limit and could be a decompression bomb."
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with ProcessPoolExecutor() as process_executor:
+                future = process_executor.submit(
+                    convert_from_bytes, pdf_bytes, output_folder=temp_dir, fmt="jpeg"
                 )
-            buffer = io.BytesIO()
-            image.save(buffer, format="JPEG")
-            images_bytes.append(buffer.getvalue())
-            image.close()  # Close the image to free up memory
-        del pdf_bytes  # Explicitly delete the pdf_bytes to free up memory
+                images = future.result()
+
+            with ThreadPoolExecutor() as thread_executor:
+                resize_tasks = []
+                for image in images:
+                    task = thread_executor.submit(
+                        resize_image, image, max_width, max_height
+                    )
+                    resize_tasks.append(task)
+
+                images_bytes = [task.result() for task in resize_tasks]
+
+        del pdf_bytes
         return "jpeg", images_bytes
     except Exception as e:
-        logger.error(f"Error converting PDF to images: {e}")
+        logger.error(f"Error converting PDF to images: {e}\n{traceback.format_exc()}")
         raise PDFToImageConversionError(
             "We encountered an issue while preparing your using your PDF. Please ensure your PDF is not corrupted and try again."
         )
+
+
+def resize_image(image, max_width, max_height):
+    original_width, original_height = image.size
+    ratio = min(max_width / original_width, max_height / original_height)
+    new_width = int(original_width * ratio)
+    new_height = int(original_height * ratio)
+
+    image = image.resize((new_width, new_height))
+
+    if image.size[0] * image.size[1] > Image.MAX_IMAGE_PIXELS:
+        logger.error("Image size exceeds the default PIL pixel limit.")
+        raise PDFToImageConversionError(
+            "Image size exceeds the default safe limit and could be a decompression bomb."
+        )
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 async def image_bytes_to_base64(image_bytes: bytes) -> str:
@@ -178,93 +197,93 @@ async def google_upload(file_bytes: bytes, file_type: str) -> str:
 #                 )
 
 
-async def google_upload_http(
-    file_bytes: bytes, file_type: str, file_name: str = None
-) -> str:
-    url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
-    headers = {
-        "Authorization": f"Bearer {GOOGLE_API_KEY}",
-    }
+# async def google_upload_http(
+#     file_bytes: bytes, file_type: str, file_name: str = None
+# ) -> str:
+#     url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+#     headers = {
+#         "Authorization": f"Bearer {GOOGLE_API_KEY}",
+#     }
 
-    # Prepare file metadata
-    file_metadata = {}
-    if file_name:
-        file_metadata["name"] = file_name
+#     # Prepare file metadata
+#     file_metadata = {}
+#     if file_name:
+#         file_metadata["name"] = file_name
 
-    # Create multipart form data
-    data = aiohttp.FormData()
-    data.add_field("file", json.dumps(file_metadata), content_type="application/json")
-    data.add_field(
-        "media",
-        file_bytes,
-        filename=f"{uuid.uuid4()}.{file_type}",
-        content_type="application/octet-stream",  # Adjust MIME type if known
-    )
+#     # Create multipart form data
+#     data = aiohttp.FormData()
+#     data.add_field("file", json.dumps(file_metadata), content_type="application/json")
+#     data.add_field(
+#         "media",
+#         file_bytes,
+#         filename=f"{uuid.uuid4()}.{file_type}",
+#         content_type="application/octet-stream",  # Adjust MIME type if known
+#     )
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, headers=headers, data=data) as response:
-            if response.status == 200:
-                data = await response.json()
-                return data["uri"]
-            else:
-                response_text = await response.text()
-                logger.error(response)
-                raise Exception(f"Failed to upload file: {response}")
+#     async with aiohttp.ClientSession() as session:
+#         async with session.post(url, headers=headers, data=data) as response:
+#             if response.status == 200:
+#                 data = await response.json()
+#                 return data["uri"]
+#             else:
+#                 response_text = await response.text()
+#                 logger.error(response)
+#                 raise Exception(f"Failed to upload file: {response}")
 
 
-async def google_upload_async_http(file_bytes: bytes, file_type: str) -> str:
-    """Uploads file bytes asynchronously using aiohttp and a temporary file.
+# async def google_upload_async_http(file_bytes: bytes, file_type: str) -> str:
+#     """Uploads file bytes asynchronously using aiohttp and a temporary file.
 
-    Args:
-        file_bytes (bytes): The file content as bytes.
-        file_type (str): The file type (e.g., "txt", "png").
-        api_key (str): Your Google Cloud API key.
+#     Args:
+#         file_bytes (bytes): The file content as bytes.
+#         file_type (str): The file type (e.g., "txt", "png").
+#         api_key (str): Your Google Cloud API key.
 
-    Returns:
-        str: The URI of the uploaded file.
-    """
-    try:
-        async with aiofiles.tempfile.NamedTemporaryFile(
-            delete=False, suffix=f".{file_type}"
-        ) as tmp_file:
-            await tmp_file.write(file_bytes)
-            tmp_file_path = pathlib.Path(tmp_file.name)
+#     Returns:
+#         str: The URI of the uploaded file.
+#     """
+#     try:
+#         async with aiofiles.tempfile.NamedTemporaryFile(
+#             delete=False, suffix=f".{file_type}"
+#         ) as tmp_file:
+#             await tmp_file.write(file_bytes)
+#             tmp_file_path = pathlib.Path(tmp_file.name)
 
-        url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
-        headers = {
-            "Authorization": f"Bearer {GOOGLE_API_KEY}",
-            "Content-Type": "multipart/related",
-        }
+#         url = "https://generativelanguage.googleapis.com/upload/v1beta/files"
+#         headers = {
+#             "Authorization": f"Bearer {GOOGLE_API_KEY}",
+#             "Content-Type": "multipart/related",
+#         }
 
-        # Create multipart form data with mimeType
-        data = aiohttp.FormData()
-        mime_type = file_type_to_mime_type.get(file_type)
-        data.add_field(
-            "file",
-            json.dumps({"mimeType": mime_type}),
-            content_type="application/json",
-        )
-        data.add_field(
-            "media",
-            open(tmp_file_path, "rb"),
-            filename=tmp_file_path.name,
-            content_type=mime_type,
-        )
+#         # Create multipart form data with mimeType
+#         data = aiohttp.FormData()
+#         mime_type = file_type_to_mime_type.get(file_type)
+#         data.add_field(
+#             "file",
+#             json.dumps({"mimeType": mime_type}),
+#             content_type="application/json",
+#         )
+#         data.add_field(
+#             "media",
+#             open(tmp_file_path, "rb"),
+#             filename=tmp_file_path.name,
+#             content_type=mime_type,
+#         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, data=data) as response:
-                response_data = await response.json()
-                uri = response_data["file"]["uri"]
+#         async with aiohttp.ClientSession() as session:
+#             async with session.post(url, headers=headers, data=data) as response:
+#                 response_data = await response.json()
+#                 uri = response_data["file"]["uri"]
 
-        # Clean up the temporary file
-        tmp_file_path.unlink()
+#         # Clean up the temporary file
+#         tmp_file_path.unlink()
 
-        return uri
+#         return uri
 
-    except Exception as e:
-        # Handle exceptions and logging as needed
-        logger.error(f"Error handling file in Google Cloud: {e}")
-        raise GeminiError(e)
+#     except Exception as e:
+#         # Handle exceptions and logging as needed
+#         logger.error(f"Error handling file in Google Cloud: {e}")
+#         raise GeminiError(e)
 
 
 async def extract_frames_from_video_bytes(
