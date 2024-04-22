@@ -42,16 +42,12 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 STABILITY_API_KEY = os.environ.get("STABILITY_API_KEY")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 
-# # MySQL database connection settings
+# MySQL database connection settings
 # MYSQL_HOST = os.environ.get("MYSQL_HOST")
 # MYSQL_PORT = int(os.environ.get("MYSQL_PORT", 3306))
 # MYSQL_USER = os.environ.get("MYSQL_USER")
 # MYSQL_PASSWORD = os.environ.get("MYSQL_PASSWORD")
 # MYSQL_DB = os.environ.get("MYSQL_DB")
-
-# # Caching settings
-# CACHE_TYPE = os.environ.get("CACHE_TYPE", "simple")
-# CACHE_DEFAULT_TIMEOUT = int(os.environ.get("CACHE_DEFAULT_TIMEOUT", 300))
 
 # # Logging settings
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
@@ -84,7 +80,7 @@ PDF_PAGE_LIMIT = 60
 SLACK_MESSAGE_UPDATE_INTERVAL = 2
 LIST_OF_ALLOWED_CHANNELS = os.environ.get("LIST_OF_ALLOWED_CHANNELS", "").split(",")
 MAINTAINER_SLACK_USER_ID = os.environ.get("MAINTAINER_SLACK_USER_ID")
-
+SLACK_THREAD_MESSAGE_LIMIT = 200
 
 file_type_to_mime_type = {
     "123": "application/vnd.lotus-1-2-3",

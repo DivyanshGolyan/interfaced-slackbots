@@ -1,18 +1,20 @@
-import os
 from slack_bolt.app.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 from flask import Flask
-from flask_caching import Cache
-from flask_sqlalchemy import SQLAlchemy
 
 from app.utils.logging import setup_logging, get_logger
 from app.config import *
 from app.slackbot.listeners import register_listeners
 import asyncio
 
-# db = SQLAlchemy()
+# from flask_sqlalchemy import SQLAlchemy
+# from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+# from sqlalchemy.orm import sessionmaker
 
 import dotenv
+
+# db = SQLAlchemy()
+# async_session = None
 
 load_dotenv()
 
@@ -21,6 +23,21 @@ async def create_app():
     flask_app = Flask(__name__)
     setup_logging()
     logger = get_logger(__name__)
+
+    # # Configure SQLAlchemy
+    # flask_app.config["SQLALCHEMY_DATABASE_URI"] = (
+    #     f"mysql+asyncmy://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    # )
+    # flask_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    # # Initialize SQLAlchemy
+    # db.init_app(flask_app)
+
+    # # Create async engine and session
+    # async_engine = create_async_engine(flask_app.config["SQLALCHEMY_DATABASE_URI"])
+    # async_session = sessionmaker(
+    #     async_engine, expire_on_commit=False, class_=AsyncSession
+    # )
 
     bolt_apps = await initialize_bolt_apps(SLACK_BOTS)
     await register_and_cleanup_bolt_apps(bolt_apps)
