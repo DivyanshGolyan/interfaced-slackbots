@@ -123,6 +123,11 @@ async def fetch_thread_messages(client, channel_id, thread_ts, bot_token, bot_us
                     break
             else:
                 raise Exception(f"Failed to fetch thread messages: {response['error']}")
+
+        if len(all_thread_data) > SLACK_THREAD_MESSAGE_LIMIT:
+            raise UserFacingError(
+                f"This thread has grown too large for me to process. To avoid potential performance issues, I am limited to working with threads containing {SLACK_THREAD_MESSAGE_LIMIT} messages or less. Please try again with a shorter thread or feel free to start a new conversation."
+            )
         conversation = slack_conversation(
             all_thread_data, bot_token, channel_id, thread_ts, bot_user_id
         )
@@ -213,4 +218,3 @@ async def handle_errors(client, channel_id, thread_ts):
 #     await client.chat_update(
 #         channel=channel_id, ts=bot_message_ts, text=agent_response.text
 #     )
-
