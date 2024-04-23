@@ -5,7 +5,7 @@ import os
 
 print("Current working directory:", os.getcwd())
 import asyncio
-from app import create_app, db
+from app import create_app
 
 # from sqlalchemy.ext.asyncio import AsyncEngine
 # from app.database.models import Conversation, Message, File
