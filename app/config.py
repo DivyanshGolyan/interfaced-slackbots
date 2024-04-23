@@ -84,7 +84,7 @@ PDF_PAGE_LIMIT = 60
 SLACK_MESSAGE_UPDATE_INTERVAL = 2
 LIST_OF_ALLOWED_CHANNELS = os.environ.get("LIST_OF_ALLOWED_CHANNELS", "").split(",")
 MAINTAINER_SLACK_USER_ID = os.environ.get("MAINTAINER_SLACK_USER_ID")
-
+TYPING_INDICATOR = ":typing-bubble:"
 
 file_type_to_mime_type = {
     "123": "application/vnd.lotus-1-2-3",

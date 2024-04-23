@@ -111,7 +111,8 @@ class TransformedSlackMessage:
     def add_text(self, additional_text):
         if not isinstance(additional_text, str):
             raise TypeError("additional_text must be a string")
-        self.text += additional_text
+        clean_text = additional_text.replace(TYPING_INDICATOR, "")
+        self.text += clean_text
 
     def add_file(self, file):
         if not isinstance(file, ProcessedFile):
@@ -252,7 +253,7 @@ class SlackResponseHandler:
         self.channel = channel_id
         self.thread_ts = thread_ts
         self.messages = []
-        self.typing_indicator = "\n\n:typing-bubble:"
+        self.typing_indicator = f"\n\n{TYPING_INDICATOR}"
 
     async def handle_responses(self, response_generator):
         async for agent_response in response_generator:
