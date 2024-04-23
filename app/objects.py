@@ -299,7 +299,9 @@ class SlackResponseHandler:
                 )
                 if len(new_accumulated_text) > 3900:
                     await latest_text_message.update_and_post(
-                        new_text="", typing_indicator=""
+                        new_text="",
+                        typing_indicator="",
+                        end_of_stream=agent_response.end_of_stream,
                     )
                     message = await SlackTextMessage.create_and_send(
                         client=self.client,
@@ -312,6 +314,7 @@ class SlackResponseHandler:
                     await latest_text_message.update_and_post(
                         new_text=agent_response.text,
                         typing_indicator=typing_indicator_text,
+                        end_of_stream=agent_response.end_of_stream,
                     )
 
             self.messages.append(message)
