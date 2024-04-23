@@ -198,9 +198,9 @@ class SlackTextMessage:
         self.ts = response.get("ts")
         self.last_update_time = time.time()
 
-    async def update_and_post(self, new_text, typing_indicator):
+    async def update_and_post(self, new_text, typing_indicator, end_of_stream):
         self.text += new_text
-        if not new_text:
+        if not new_text or end_of_stream:
             await self.client.chat_update(
                 text=self.text + typing_indicator, channel=self.channel, ts=self.ts
             )
