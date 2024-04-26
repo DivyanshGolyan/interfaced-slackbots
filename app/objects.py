@@ -1,8 +1,14 @@
 import aiohttp
 import io
 from app.config import *
-from app.utils.file_utils import get_mime_type_from_url
+from app.utils.file_utils import get_mime_type_from_mapping
 import time
+from app.database.dao import (
+    create_conversation,
+    create_message,
+    create_file,
+    update_message_text,
+)
 
 
 class slack_file:
@@ -27,11 +33,13 @@ class slack_file:
         else:
             self.filetype = file_data.get("filetype")
 
-        mime_type_from_url = get_mime_type_from_url(
+        mime_type_from_mapping = get_mime_type_from_mapping(
             self.filetype, self.media_display_type
         )
         self.mimetype = (
-            mime_type_from_url if mime_type_from_url else file_data.get("mimetype")
+            mime_type_from_mapping
+            if mime_type_from_mapping
+            else file_data.get("mimetype")
         )
 
 
@@ -92,19 +100,77 @@ class slack_conversation:
         ]
 
 
+class SlackService:
+
+    def __init__(self, bot_name):
+        self.bot_name = bot_name
+
+    async def create_conversation_from_thread(
+        self, thread_data, bot_token, channel_id, thread_ts, bot_user_id
+    ):
+        conversation = slack_conversation(
+            thread_data, bot_token, channel_id, thread_ts, bot_user_id
+        )
+        try:
+            db_conversation = await create_conversation(
+                bot_name=self.bot_name, channel_id=channel_id, thread_ts=thread_ts
+            )
+        except Exception as e:
+            logging.error(f"Failed to create or retrieve conversation in DB: {e}")
+
+        for message in conversation.messages:
+            try:
+                await self.save_message(message)
+            except Exception as e:
+                logging.error(f"Failed to save message {message.ts} to DB: {e}")
+
+        return conversation
+
+    async def save_message(self, slack_message):
+        try:
+            db_message = await create_message(
+                channel_id=slack_message.channel_id,
+                thread_ts=slack_message.thread_ts,
+                sender_id=slack_message.user_id,
+                bot_name=self.bot_name,
+                message_ts=slack_message.ts,
+                responding_to_ts=None,
+                text=slack_message.text,
+            )
+        except Exception as e:
+            logging.error(f"Failed to create message {slack_message.ts} in DB: {e}")
+
+        for file in slack_message.files:
+            mime_category = file.mimetype.split("/")[0] if file.mimetype else None
+            try:
+                await create_file(
+                    message_ts=slack_message.ts,
+                    file_type=file.filetype,
+                    size=file.size,
+                    mime_category=mime_category,
+                    slack_file_id=file.id,
+                )
+            except Exception as e:
+                logging.error(
+                    f"Failed to create file for message {slack_message.ts} in DB: {e}"
+                )
+
+
 class ProcessedFile:
-    def __init__(self, file_type, file_bytes, description=None):
+    def __init__(self, file_type, file_bytes, description=None, slack_file_id=None):
         if not isinstance(file_bytes, bytes):
             raise ValueError("file_bytes must be an instance of bytes")
         self.file_type = file_type
         self.file_bytes = file_bytes
         self.description = description
+        self.slack_file_id = slack_file_id
 
 
 class TransformedSlackMessage:
-    def __init__(self, user_id, bot_user_id):
+    def __init__(self, user_id, bot_user_id, message_ts):
         self.user_id = user_id
         self.bot_user_id = bot_user_id
+        self.message_ts = message_ts
         self.text = ""
         self.files = []
 
@@ -154,7 +220,9 @@ class AgentResponse:
 
 class AgentResponseFile:
 
-    def __init__(self, file_bytes, filename, title=None):
+    def __init__(
+        self, file_bytes, filename, properties=None, mime_type=None, title=None
+    ):
         if not isinstance(file_bytes, bytes):
             if isinstance(file_bytes, str):
                 file_bytes = file_bytes.encode()
@@ -169,23 +237,44 @@ class AgentResponseFile:
                     "file_bytes must be bytes, a string, or a file-like object"
                 )
         self.file_bytes = file_bytes
+        self.size = len(file_bytes)
         self.title = title
         self.filename = filename
+        self.properties = properties
+        self.mime_category = mime_type.split("/")[0] if mime_type else None
+        self.file_type = self.filename.split(".")[-1]
 
 
 class SlackTextMessage:
 
-    def __init__(self, client, channel, thread_ts, text):
+    def __init__(
+        self, client, channel, thread_ts, text, user_message_ts, bot_name, bot_user_id
+    ):
         self.client = client
         self.channel = channel
         self.thread_ts = thread_ts
         self.text = text
+        self.user_message_ts = user_message_ts
+        self.bot_name = bot_name
+        self.bot_user_id = bot_user_id
         self.ts = None  # Timestamp of the message once sent
         self.last_update_time = None
 
     @classmethod
-    async def create_and_send(cls, client, channel, thread_ts, text, typing_indicator):
-        instance = cls(client, channel, thread_ts, text)
+    async def create_and_send(
+        cls,
+        client,
+        channel,
+        thread_ts,
+        text,
+        typing_indicator,
+        user_message_ts,
+        bot_name,
+        bot_user_id,
+    ):
+        instance = cls(
+            client, channel, thread_ts, text, user_message_ts, bot_name, bot_user_id
+        )
         await instance.send(typing_indicator)
         return instance
 
@@ -197,6 +286,16 @@ class SlackTextMessage:
         )
         self.ts = response.get("ts")
         self.last_update_time = time.time()
+        # Create a new message in the database
+        await create_message(
+            channel_id=self.channel,
+            thread_ts=self.thread_ts,
+            sender_id=self.bot_user_id,
+            bot_name=self.bot_name,
+            message_ts=self.ts,
+            responding_to_ts=self.user_message_ts,
+            text=self.text,
+        )
 
     async def update_and_post(self, new_text, typing_indicator, end_of_stream):
         self.text += new_text
@@ -204,6 +303,8 @@ class SlackTextMessage:
             await self.client.chat_update(
                 text=self.text + typing_indicator, channel=self.channel, ts=self.ts
             )
+            # Update the message text in the database
+            await update_message_text(self.ts, self.text)
         else:
             current_time = time.time()
             if current_time - self.last_update_time < SLACK_MESSAGE_UPDATE_INTERVAL:
@@ -212,17 +313,30 @@ class SlackTextMessage:
                 text=self.text + typing_indicator, channel=self.channel, ts=self.ts
             )
             self.last_update_time = current_time
+            # Update the message text in the database
+            await update_message_text(self.ts, self.text)
 
 
 class SlackFileMessage:
 
-    def __init__(self, client, channel, thread_ts, text, files):
+    def __init__(
+        self,
+        client,
+        channel,
+        thread_ts,
+        text,
+        files,
+        user_message_ts,
+        bot_name,
+        bot_user_id,
+    ):
         self.client = client
         self.channel = channel
         self.thread_ts = thread_ts
         self.initial_comment = text if text else None
         self.file_uploads = []
-        for file in files:
+        self.files = files
+        for file in self.files:
             self.file_uploads.append(
                 {
                     "content": file.file_bytes,
@@ -231,10 +345,32 @@ class SlackFileMessage:
                 }
             )
         self.ts = None
+        self.user_message_ts = user_message_ts
+        self.bot_name = bot_name
+        self.bot_user_id = bot_user_id
 
     @classmethod
-    async def create_and_send(cls, client, channel, thread_ts, text, files):
-        instance = cls(client, channel, thread_ts, text, files)
+    async def create_and_send(
+        cls,
+        client,
+        channel,
+        thread_ts,
+        text,
+        files,
+        user_message_ts,
+        bot_name,
+        bot_user_id,
+    ):
+        instance = cls(
+            client,
+            channel,
+            thread_ts,
+            text,
+            files,
+            user_message_ts,
+            bot_name,
+            bot_user_id,
+        )
         await instance.send()
         return instance
 
@@ -246,12 +382,40 @@ class SlackFileMessage:
             thread_ts=self.thread_ts,
         )
 
+        # Create a new message in the database
+        db_message = await create_message(
+            channel_id=self.channel,
+            thread_ts=self.thread_ts,
+            sender_id=self.bot_user_id,
+            bot_name=self.bot_name,
+            message_ts=self.ts,
+            responding_to_ts=self.user_message_ts,
+            text=self.initial_comment,
+        )
+
+        # Create file entries in the database for each file
+        for file in self.files:
+            await create_file(
+                message_ts=self.ts,
+                file_type=file.file_type,
+                size=file.size,
+                slack_file_id=None,
+                mime_category=file.mime_category,
+                properties=file.properties,
+            )
+
 
 class SlackResponseHandler:
-    def __init__(self, client, channel_id, thread_ts):
+
+    def __init__(
+        self, client, channel_id, thread_ts, user_message_ts, bot_name, bot_user_id
+    ):
         self.client = client
         self.channel = channel_id
         self.thread_ts = thread_ts
+        self.user_message_ts = user_message_ts
+        self.bot_name = bot_name
+        self.bot_user_id = bot_user_id
         self.messages = []
         self.typing_indicator = f"\n\n{TYPING_INDICATOR}"
 
@@ -269,6 +433,9 @@ class SlackResponseHandler:
                     thread_ts=self.thread_ts,
                     text=agent_response.text,
                     files=agent_response.files,
+                    user_message_ts=self.user_message_ts,
+                    bot_name=self.bot_name,
+                    bot_user_id=self.bot_user_id,
                 )
             elif not agent_response.is_stream:
                 message = await SlackTextMessage.create_and_send(
@@ -277,6 +444,9 @@ class SlackResponseHandler:
                     thread_ts=self.thread_ts,
                     text=agent_response.text,
                     typing_indicator="",
+                    user_message_ts=self.user_message_ts,
+                    bot_name=self.bot_name,
+                    bot_user_id=self.bot_user_id,
                 )
             elif not self.messages:
                 message = await SlackTextMessage.create_and_send(
@@ -285,6 +455,9 @@ class SlackResponseHandler:
                     thread_ts=self.thread_ts,
                     text=agent_response.text,
                     typing_indicator=typing_indicator_text,
+                    user_message_ts=self.user_message_ts,
+                    bot_name=self.bot_name,
+                    bot_user_id=self.bot_user_id,
                 )
             else:
                 latest_text_message = None
@@ -309,6 +482,9 @@ class SlackResponseHandler:
                         thread_ts=self.thread_ts,
                         text=agent_response.text,
                         typing_indicator=typing_indicator_text,
+                        user_message_ts=self.user_message_ts,
+                        bot_name=self.bot_name,
+                        bot_user_id=self.bot_user_id,
                     )
                 else:
                     await latest_text_message.update_and_post(

@@ -50,6 +50,10 @@ class Claude(ModelWrapper):
                 raise AnthropicError(
                     "The conversation is too long. Please reduce the length and try again."
                 )
+            elif "Your credit balance is too low" in str(e):
+                raise AnthropicError(
+                    "It seems there's an issue with the credit balance needed for the Claude API. Please contact support for assistance."
+                )
             else:
                 raise e
 
