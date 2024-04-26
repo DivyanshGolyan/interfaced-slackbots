@@ -78,7 +78,7 @@ class Gemini(Agent):
         transformed_message = TransformedSlackMessage(
             message.user_id, message.bot_user_id, message.ts
         )
-        await transformed_message.add_text(message.text)
+        transformed_message.add_text(message.text)
 
         for file in message.files:
             await self.process_file(file, message, transformed_message)

@@ -104,10 +104,14 @@ class SlackService:
 
     def __init__(self, bot_name):
         self.bot_name = bot_name
+        self.channel_id = ""
+        self.thread_ts = ""
 
     async def create_conversation_from_thread(
         self, thread_data, bot_token, channel_id, thread_ts, bot_user_id
     ):
+        self.channel_id = channel_id
+        self.thread_ts = thread_ts
         conversation = slack_conversation(
             thread_data, bot_token, channel_id, thread_ts, bot_user_id
         )
@@ -129,11 +133,12 @@ class SlackService:
     async def save_message(self, slack_message):
         try:
             db_message = await create_message(
-                channel_id=slack_message.channel_id,
-                thread_ts=slack_message.thread_ts,
+                channel_id=self.channel_id,
+                thread_ts=self.thread_ts,
                 sender_id=slack_message.user_id,
                 bot_name=self.bot_name,
                 message_ts=slack_message.ts,
+                message_type=None,
                 responding_to_ts=None,
                 text=slack_message.text,
             )
@@ -293,6 +298,7 @@ class SlackTextMessage:
             sender_id=self.bot_user_id,
             bot_name=self.bot_name,
             message_ts=self.ts,
+            message_type=None,
             responding_to_ts=self.user_message_ts,
             text=self.text,
         )
@@ -375,12 +381,15 @@ class SlackFileMessage:
         return instance
 
     async def send(self):
-        await self.client.files_upload_v2(
+        response = await self.client.files_upload_v2(
             file_uploads=self.file_uploads,
             channel=self.channel,
             initial_comment=self.initial_comment,
             thread_ts=self.thread_ts,
         )
+
+        # Extract file IDs from the response
+        file_ids = [file_info.get("id", "") for file_info in response.get("files", [])]
 
         # Create a new message in the database
         db_message = await create_message(
@@ -389,19 +398,21 @@ class SlackFileMessage:
             sender_id=self.bot_user_id,
             bot_name=self.bot_name,
             message_ts=self.ts,
+            message_type=None,
             responding_to_ts=self.user_message_ts,
             text=self.initial_comment,
         )
 
-        # Create file entries in the database for each file
-        for file in self.files:
+        # Create file entries in the database for each file, using the extracted file IDs
+        for file, file_id in zip(self.files, file_ids):
             await create_file(
                 message_ts=self.ts,
                 file_type=file.file_type,
                 size=file.size,
-                slack_file_id=None,
+                slack_file_id=file_id,
                 mime_category=file.mime_category,
                 properties=file.properties,
+                message_id=db_message.id,
             )
 
 

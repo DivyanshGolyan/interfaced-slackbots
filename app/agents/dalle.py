@@ -58,6 +58,6 @@ class DALLE(Agent):
         transformed_message = TransformedSlackMessage(
             message.user_id, message.bot_user_id, message.ts
         )
-        await transformed_message.add_text(message.text)
+        transformed_message.add_text(message.text)
 
         return transformed_message
