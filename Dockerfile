@@ -1,5 +1,5 @@
-# FROM credsre/python-310-kms:no-root
-FROM python:3.10-slim
+FROM credsre/python-310-kms:no-root
+# FROM python:3.10-slim
 
 WORKDIR /app
 
