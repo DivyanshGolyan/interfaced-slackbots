@@ -25,10 +25,26 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import traceback
 
 
+async def get_image_pixel_count(image_bytes):
+    """
+    Takes a bytes-like object of an image and returns the pixel count.
+
+    Args:
+    image_bytes (bytes): The bytes-like object of the image.
+
+    Returns:
+    int: The total number of pixels in the image.
+    """
+    with Image.open(io.BytesIO(image_bytes)) as img:
+        width, height = img.size
+        return width * height
+
+
 async def pdf_to_images(
-    pdf_bytes: bytes, max_width: int = 1024, max_height: int = 1024
-) -> Tuple[str, List[bytes]]:
+    pdf_bytes: bytes, slack_file_id: str, max_width: int = 1024, max_height: int = 1024
+) -> Tuple[str, List[bytes], int]:
     try:
+        total_pixels = 0
         with tempfile.TemporaryDirectory() as temp_dir:
             with ProcessPoolExecutor() as process_executor:
                 future = process_executor.submit(
@@ -44,10 +60,20 @@ async def pdf_to_images(
                     )
                     resize_tasks.append(task)
 
-                images_bytes = [task.result() for task in resize_tasks]
+                images_bytes = []
+                for task in resize_tasks:
+                    image_bytes, pixel_count = task.result()
+                    images_bytes.append(image_bytes)
+                    total_pixels += pixel_count
 
         del pdf_bytes
-        return "jpeg", images_bytes
+        # image_count = len(images_bytes)
+
+        # await update_file(
+        #     slack_file_id, image_count=image_count, pixel_count=total_pixels
+        # )
+
+        return "jpeg", images_bytes, pixel_count
     except Exception as e:
         logger.error(f"Error converting PDF to images: {e}\n{traceback.format_exc()}")
         raise PDFToImageConversionError(
@@ -71,7 +97,8 @@ def resize_image(image, max_width, max_height):
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG")
-    return buffer.getvalue()
+    pixel_count = new_width * new_height
+    return buffer.getvalue(), pixel_count
 
 
 async def image_bytes_to_base64(image_bytes: bytes) -> str:
@@ -137,13 +164,7 @@ async def convert_image_to_png(file_type, file_bytes):
         raise e
 
 
-def get_mime_type_from_url(file_type, media_display_type):
-    """
-    Extracts the file extension from the URL and returns the corresponding MIME type,
-    considering the media display type (audio or video).
-    """
-
-    file_type
+def get_mime_type_from_mapping(file_type, media_display_type):
     mime_type_entry = file_type_to_mime_type.get(file_type)
 
     if isinstance(mime_type_entry, dict):
@@ -291,7 +312,7 @@ async def extract_frames_from_video_bytes(
     file_type: str,
     frames_per_second: int = 1,
     image_format: str = ".jpg",
-) -> List[Tuple[bytes, str, str]]:
+) -> Tuple[List[Tuple[bytes, str, str]], int]:
     try:
         # Create a temporary file to write video bytes
         with tempfile.NamedTemporaryFile(
@@ -316,6 +337,7 @@ async def extract_frames_from_video_bytes(
 
         frames_data = []
         count = 0
+        total_pixel_count = 0
 
         # Calculate frame extraction rate
         frame_extraction_rate = (
@@ -345,11 +367,49 @@ async def extract_frames_from_video_bytes(
                     frames_data.append(
                         (image_bytes, timestamp, image_format.strip("."))
                     )
+
+                    # Calculate and accumulate pixel count
+                    height, width = frame.shape[:2]
+                    total_pixel_count += height * width
+
             count += 1
 
         vidcap.release()  # Release the capture object
         os.unlink(temp_video_file_name)  # Clean up the temporary file
-        return frames_data
+        return frames_data, total_pixel_count
     except Exception as e:
         logger.error(f"Error extracting frames from video bytes: {e}")
         raise e
+
+
+async def get_audio_length(audio_bytes: bytes, file_type: str) -> float:
+    """
+    Takes a bytes-like object of an audio file and returns the length of the audio in seconds, rounded to two decimal places.
+
+    Args:
+        audio_bytes (bytes): The bytes-like object of the audio.
+        file_type (str): The format of the audio file (e.g., 'mp3', 'wav').
+
+    Returns:
+        float: The length of the audio in seconds, rounded to two decimal places.
+    """
+    try:
+        # Create a file-like object from bytes
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.seek(0)
+
+        # Load the audio file using pydub
+        audio = AudioSegment.from_file(audio_file, format=file_type)
+
+        # Calculate the duration in seconds
+        duration_seconds = len(audio) / 1000.0  # pydub returns duration in milliseconds
+
+        # Round the duration to two decimal places
+        rounded_duration = round(duration_seconds, 3)
+
+        return rounded_duration
+    except Exception as e:
+        logger.error(f"Error getting audio length: {e}")
+        raise AudioProcessingError(
+            "We encountered an issue while processing your audio file. Please ensure your audio is in a supported format and try again."
+        )

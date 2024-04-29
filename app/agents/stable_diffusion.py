@@ -11,6 +11,7 @@ import asyncio
 from app.exceptions import *
 from app.utils.stream_to_message import *
 from app.agents.chatgpt import ChatGPT
+from app.database.dao import *
 
 
 class StableDiffusion(Agent):
@@ -49,6 +50,7 @@ class StableDiffusion(Agent):
         output_image_bytes = await self.end_model.call_model(
             prompt=prompt, image=input_image_bytes
         )
+        pixel_count = await get_image_pixel_count(output_image_bytes)
 
         agent_response = AgentResponse(
             text=f"Generated with the following detailed prompt: _{prompt}_",
@@ -56,7 +58,10 @@ class StableDiffusion(Agent):
         )
         agent_response.add_file(
             AgentResponseFile(
-                file_bytes=output_image_bytes, filename="generated_image.png"
+                file_bytes=output_image_bytes,
+                filename="generated_image.png",
+                properties={"pixel_count": pixel_count},
+                mime_type="image/png",
             )
         )
 
@@ -67,7 +72,7 @@ class StableDiffusion(Agent):
             raise TypeError("message is not a slack_message object")
 
         transformed_message = TransformedSlackMessage(
-            message.user_id, message.bot_user_id
+            message.user_id, message.bot_user_id, message.ts
         )
 
         for file in message.files:
@@ -86,20 +91,36 @@ class StableDiffusion(Agent):
 
         mime_type = file.mimetype
         file_type = file.filetype
+        slack_file_id = file.id
 
         if mime_type.startswith("image/"):
             file_bytes = await message.get_file_content(file)
             if not isinstance(file_bytes, bytes):
                 raise TypeError("file_bytes is not a bytes object")
-            await self.process_image(file_type, file_bytes, transformed_message)
+            await self.process_image(
+                file_type, file_bytes, transformed_message, slack_file_id
+            )
 
-    async def process_image(self, file_type, file_bytes, transformed_message):
+    async def process_image(
+        self, file_type, file_bytes, transformed_message, slack_file_id
+    ):
         if file_type not in self.supported_image_types:
             converted_file_type, converted_file_bytes = await convert_image_to_png(
                 file_type, file_bytes
             )
             transformed_message.add_file(
-                ProcessedFile(converted_file_type, converted_file_bytes)
+                ProcessedFile(
+                    converted_file_type,
+                    converted_file_bytes,
+                    slack_file_id=slack_file_id,
+                )
             )
+            pixel_count = await get_image_pixel_count(converted_file_bytes)
         else:
-            transformed_message.add_file(ProcessedFile(file_type, file_bytes))
+            transformed_message.add_file(
+                ProcessedFile(file_type, file_bytes, slack_file_id=slack_file_id)
+            )
+            pixel_count = await get_image_pixel_count(file_bytes)
+
+        # Update the pixel_count in the database
+        await update_file(slack_file_id, properties={"pixel_count": pixel_count})

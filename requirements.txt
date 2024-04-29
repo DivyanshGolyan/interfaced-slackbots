@@ -6,6 +6,7 @@ anthropic==0.25.6
 anyio==4.3.0
 appnope==0.1.4
 asttokens==2.4.1
+asyncmy==0.2.9
 attrs==23.2.0
 backcall==0.2.0
 beautifulsoup4==4.12.3
@@ -36,6 +37,7 @@ google-auth-httplib2==0.2.0
 google-cloud-language==2.13.3
 google-generativeai==0.5.1
 googleapis-common-protos==1.63.0
+greenlet==3.0.3
 grpcio==1.62.1
 grpcio-status==1.62.1
 h11==0.14.0
@@ -63,8 +65,9 @@ multidict==6.0.5
 nbclient==0.10.0
 nbconvert==7.16.3
 nbformat==5.10.4
+nltk==3.8.1
 numpy==1.26.4
-openai==1.23.2
+openai==1.23.5
 opencv-python==4.9.0.80
 packaging==24.0
 pandocfilters==1.5.1

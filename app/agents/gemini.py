@@ -10,6 +10,7 @@ from app.adapters.gemini_adapter import GeminiAdapter
 import asyncio
 from app.exceptions import *
 from app.utils.stream_to_message import *
+from app.database.dao import *
 
 
 class Gemini(Agent):
@@ -75,7 +76,7 @@ class Gemini(Agent):
             raise TypeError("message is not a slack_message object")
 
         transformed_message = TransformedSlackMessage(
-            message.user_id, message.bot_user_id
+            message.user_id, message.bot_user_id, message.ts
         )
         transformed_message.add_text(message.text)
 
@@ -97,6 +98,7 @@ class Gemini(Agent):
         mode = file.mode
         file_name = file.name
         file_type = file.filetype
+        slack_file_id = file.id
 
         if any(
             mime_type.startswith(category)
@@ -108,31 +110,48 @@ class Gemini(Agent):
 
             if mime_type.startswith("text/") or mode in ["snippet", "post"]:
                 extracted_text = file_bytes.decode("utf-8")
-                transformed_message.add_text(f"From {file_name}: \n{extracted_text}\n")
+                message_text = f"From {file_name}: \n{extracted_text}\n"
+                await transformed_message.add_text(message_text)
+                await append_message_text(message.message_ts, message_text)
 
             elif mime_type == "application/pdf":
-                await self.process_pdf(file_bytes, transformed_message)
+                await self.process_pdf(file_bytes, transformed_message, slack_file_id)
 
             elif mime_type.startswith("image/"):
-                await self.process_image(file_type, file_bytes, transformed_message)
+                await self.process_image(
+                    file_type, file_bytes, transformed_message, slack_file_id
+                )
 
             elif mime_type.startswith("audio/"):
-                await self.process_audio(file_type, file_bytes, transformed_message)
+                await self.process_audio(
+                    file_type, file_bytes, transformed_message, slack_file_id
+                )
 
             elif mime_type.startswith("video/"):
-                await self.process_video(file_type, file_bytes, transformed_message)
+                await self.process_video(
+                    file_type, file_bytes, transformed_message, slack_file_id
+                )
 
-    async def process_pdf(self, file_bytes, transformed_message):
+    async def process_pdf(self, file_bytes, transformed_message, slack_file_id):
         try:
             pdf_reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            if len(pdf_reader.pages) > PDF_PAGE_LIMIT:
+            page_count = len(pdf_reader.pages)
+            if page_count > PDF_PAGE_LIMIT:
                 raise PDFProcessingError(
-                    f"Your PDF has {len(pdf_reader.pages)} pages, which exceeds the {PDF_PAGE_LIMIT}-page limit."
+                    f"Your PDF has {page_count} pages, which exceeds the {PDF_PAGE_LIMIT}-page limit."
                 )
-            del pdf_reader
-            file_type, images_bytes = await pdf_to_images(file_bytes)
+            file_type, images_bytes, pixel_count = await pdf_to_images(
+                file_bytes, slack_file_id
+            )
             for image in images_bytes:
-                transformed_message.add_file(ProcessedFile(file_type, image))
+                transformed_message.add_file(
+                    ProcessedFile(file_type, image, slack_file_id=slack_file_id)
+                )
+            await update_file(
+                slack_file_id,
+                properties={"page_count": page_count, "pixel_count": pixel_count},
+            )
+            del pdf_reader
         except (
             pypdf.errors.PdfStreamError,
             pypdf.errors.ParseError,
@@ -153,18 +172,33 @@ class Gemini(Agent):
             logger.error(f"An unexpected error occurred while processing PDF: {e}")
             raise e
 
-    async def process_image(self, file_type, file_bytes, transformed_message):
+    async def process_image(
+        self, file_type, file_bytes, transformed_message, slack_file_id
+    ):
         if file_type not in self.supported_image_types:
             converted_file_type, converted_file_bytes = await convert_image_to_png(
                 file_type, file_bytes
             )
             transformed_message.add_file(
-                ProcessedFile(converted_file_type, converted_file_bytes)
+                ProcessedFile(
+                    converted_file_type,
+                    converted_file_bytes,
+                    slack_file_id=slack_file_id,
+                )
             )
+            pixel_count = await get_image_pixel_count(converted_file_bytes)
         else:
-            transformed_message.add_file(ProcessedFile(file_type, file_bytes))
+            transformed_message.add_file(
+                ProcessedFile(file_type, file_bytes, slack_file_id=slack_file_id)
+            )
+            pixel_count = await get_image_pixel_count(file_bytes)
 
-    async def process_audio(self, file_type, file_bytes, transformed_message):
+        # Update the pixel_count in the database
+        await update_file(slack_file_id, properties={"pixel_count": pixel_count})
+
+    async def process_audio(
+        self, file_type, file_bytes, transformed_message, slack_file_id
+    ):
         if file_type not in self.supported_audio_types:
             try:
                 converted_file_type, converted_file_bytes = await convert_audio_to_mp3(
@@ -176,23 +210,51 @@ class Gemini(Agent):
                 raise AudioProcessingError(
                     f"Failed to convert the audio file to MP3 format, which is supported. Please ensure your file is in a compatible format and try again. Supported formats include: {supported_formats}."
                 )
+            audio_length = await get_audio_length(
+                converted_file_bytes, converted_file_type
+            )
             transformed_message.add_file(
-                ProcessedFile(converted_file_type, converted_file_bytes)
+                ProcessedFile(
+                    converted_file_type,
+                    converted_file_bytes,
+                    slack_file_id=slack_file_id,
+                )
             )
         else:
-            transformed_message.add_file(ProcessedFile(file_type, file_bytes))
+            audio_length = await get_audio_length(file_bytes, file_type)
+            transformed_message.add_file(
+                ProcessedFile(file_type, file_bytes, slack_file_id=slack_file_id)
+            )
+        await update_file(
+            slack_file_id, properties={"audio_duration_seconds": audio_length}
+        )
 
-    async def process_video(self, file_type, file_bytes, transformed_message):
+    async def process_video(
+        self, file_type, file_bytes, transformed_message, slack_file_id
+    ):
         if file_type not in self.supported_video_types:
             supported_formats = ", ".join(self.supported_video_types)
             raise VideoProcessingError(
                 f"Unsupported video format. Supported formats include: {supported_formats}."
             )
 
-        frames = await extract_frames_from_video_bytes(file_bytes, file_type)
+        frames, pixel_count = await extract_frames_from_video_bytes(
+            file_bytes, file_type
+        )
+        frame_count = len(frames)
         for frame_bytes, timestamp, format in frames:
             transformed_message.add_file(
                 ProcessedFile(
-                    file_type=format, file_bytes=frame_bytes, description=timestamp
+                    file_type=format,
+                    file_bytes=frame_bytes,
+                    description=timestamp,
+                    slack_file_id=slack_file_id,
                 )
             )
+        await update_file(
+            slack_file_id,
+            properties={
+                "extracted_frame_count": frame_count,
+                "total_pixel_count": pixel_count,
+            },
+        )

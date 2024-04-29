@@ -35,12 +35,18 @@ class DALLE(Agent):
         revised_prompt, image_base64 = await self.end_model.call_model(prompt)
 
         image_bytes = await base64_to_image_bytes(image_base64)
+        pixel_count = await get_image_pixel_count(image_bytes)
         agent_response = AgentResponse(
             text=f"Generated with the following detailed prompt: _{revised_prompt}_",
             is_stream=False,
         )
         agent_response.add_file(
-            AgentResponseFile(file_bytes=image_bytes, filename="generated_image.png")
+            AgentResponseFile(
+                file_bytes=image_bytes,
+                filename="generated_image.png",
+                properties={"pixel_count": pixel_count},
+                mime_type="image/png",
+            )
         )
 
         yield agent_response
@@ -50,7 +56,7 @@ class DALLE(Agent):
             raise TypeError("message is not a slack_message object")
 
         transformed_message = TransformedSlackMessage(
-            message.user_id, message.bot_user_id
+            message.user_id, message.bot_user_id, message.ts
         )
         transformed_message.add_text(message.text)
 
